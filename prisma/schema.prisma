@@ -1,0 +1,1163 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RequestStatus {
+  NEW
+  ASSIGNED
+  SEARCHING
+  WAITING_SUPPLIERS
+  OFFERS_READY
+  SENT_TO_CUSTOMER
+  WAITING_CUSTOMER
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+enum SupplierStatus {
+  ACTIVE
+  REVIEW
+  SUSPENDED
+  PENDING
+  REJECTED
+}
+
+enum SupplierUserRole {
+  OWNER
+  MANAGER
+}
+
+enum SupplierUserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+enum SupplierInquiryStatus {
+  DRAFT
+  SENT
+  RECEIVED
+  DECLINED
+  EXPIRED
+}
+
+enum SupplierQuoteStatus {
+  RECEIVED
+  SELECTED
+  DECLINED
+  EXPIRED
+}
+
+enum CustomerOfferStatus {
+  DRAFT
+  FORMED
+  SENT
+  VIEWED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+model User {
+  id               String        @id @default(uuid()) @db.Uuid
+  name             String
+  email            String?       @unique
+  jobTitle         String?       @map("job_title")
+  role             String        @default("MANAGER")
+  active           Boolean       @default(true)
+  emailVerified    Boolean       @default(false)
+  image            String?
+  phoneNumber         String?       @unique @map("phone_number")
+  phoneNumberVerified Boolean?      @default(false) @map("phone_number_verified")
+  roleDefinition   StaffRole     @relation(fields: [role], references: [code], onUpdate: Cascade, onDelete: Restrict)
+  sessions         Session[]
+  accounts         Account[]
+  permissionOverrides UserPermission[]
+  assignedRequests Request[]     @relation("AssignedManager")
+  assignedOrders   Order[]       @relation("OrderAssignedManager")
+  assignedTasks    Task[]        @relation("TaskAssignee")
+  activityEvents   ActivityLog[]
+  supplierMembership SupplierUser?
+  customer         Customer?
+  staffInvitationsCreated StaffInvitation[] @relation("StaffInvitationsCreated")
+  createdAt        DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @db.Timestamptz(6)
+
+  @@map("users")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  expiresAt DateTime @db.Timestamptz(6)
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(uuid()) @db.Uuid
+  accountId             String
+  providerId            String
+  userId                String    @db.Uuid
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @db.Text
+  refreshToken          String?   @db.Text
+  idToken               String?   @db.Text
+  accessTokenExpiresAt  DateTime? @db.Timestamptz(6)
+  refreshTokenExpiresAt DateTime? @db.Timestamptz(6)
+  scope                 String?
+  password              String?   @db.Text
+  createdAt             DateTime  @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(6)
+
+  @@index([userId])
+  @@unique([providerId, accountId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String   @id @default(uuid()) @db.Uuid
+  identifier String
+  value      String   @db.Text
+  expiresAt  DateTime @db.Timestamptz(6)
+  createdAt  DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(6)
+
+  @@index([identifier])
+  @@map("verifications")
+}
+
+model RateLimit {
+  id          String @id @default(uuid()) @db.Uuid
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+
+  @@map("rate_limits")
+}
+
+model StaffRole {
+  code             String            @id
+  name             String
+  isSystem         Boolean           @default(false)
+  users            User[]
+  permissions      RolePermission[]
+  staffInvitations StaffInvitation[]
+  createdAt        DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime          @updatedAt @db.Timestamptz(6)
+
+  @@map("staff_roles")
+}
+
+model StaffPermission {
+  code        String           @id
+  description String
+  roles       RolePermission[]
+  assignments UserPermission[]
+  createdAt   DateTime         @default(now()) @db.Timestamptz(6)
+
+  @@map("staff_permissions")
+}
+
+model RolePermission {
+  roleCode       String          @map("role_code")
+  permissionCode String          @map("permission_code")
+  role           StaffRole       @relation(fields: [roleCode], references: [code], onDelete: Cascade)
+  permission     StaffPermission @relation(fields: [permissionCode], references: [code], onDelete: Cascade)
+
+  @@id([roleCode, permissionCode])
+  @@map("role_permissions")
+}
+
+enum PermissionEffect {
+  GRANT
+  DENY
+}
+
+model UserPermission {
+  userId         String           @db.Uuid @map("user_id")
+  permissionCode String           @map("permission_code")
+  effect         PermissionEffect
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission     StaffPermission  @relation(fields: [permissionCode], references: [code], onDelete: Cascade)
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6)
+
+  @@id([userId, permissionCode])
+  @@map("user_permissions")
+}
+
+model Customer {
+  id              String            @id @default(uuid()) @db.Uuid
+  name            String
+  phone           String?
+  normalizedPhone String?
+  email           String?
+  normalizedEmail String?
+  internalNote    String?
+  userId          String?           @unique @db.Uuid @map("user_id")
+  user            User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  vehicles        CustomerVehicle[]
+  addresses       CustomerAddress[]
+  requests        Request[]
+  orders          Order[]
+  createdAt       DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime          @updatedAt @db.Timestamptz(6)
+
+  @@index([normalizedPhone])
+  @@index([normalizedEmail])
+  @@map("customers")
+}
+
+model CustomerVehicle {
+  id                    String                @id @default(uuid()) @db.Uuid
+  customerId            String                @db.Uuid @map("customer_id")
+  customer              Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  vehicleMakeId         String?               @map("vehicle_make_id")
+  vehicleMake           VehicleMake?          @relation("CustomerVehicleMake", fields: [vehicleMakeId], references: [id], onDelete: SetNull)
+  vehicleModelId        String?               @map("vehicle_model_id")
+  vehicleModel          VehicleModel?         @relation("CustomerVehicleModel", fields: [vehicleModelId], references: [id], onDelete: SetNull)
+  vehicleGenerationId   String?               @map("vehicle_generation_id")
+  vehicleGeneration     VehicleGeneration?    @relation("CustomerVehicleGeneration", fields: [vehicleGenerationId], references: [id], onDelete: SetNull)
+  vehicleModificationId String?               @map("vehicle_modification_id")
+  vehicleModification   VehicleModification?  @relation("CustomerVehicleModification", fields: [vehicleModificationId], references: [id], onDelete: SetNull)
+  make                  String
+  model                 String
+  generation            String?
+  year                  Int?
+  bodyType              String?               @map("body_type")
+  modification          String?
+  vin                   String
+  engine                String?
+  colorName             String?               @map("color_name")
+  colorCode             String?               @map("color_code")
+  colorHex              String?               @map("color_hex")
+  isDefault             Boolean               @default(false) @map("is_default")
+  createdAt             DateTime              @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt             DateTime              @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([customerId])
+  @@index([vehicleMakeId])
+  @@index([vehicleModelId])
+  @@index([vehicleGenerationId])
+  @@index([vin])
+  @@map("customer_vehicles")
+}
+
+model CustomerAddress {
+  id            String    @id @default(uuid()) @db.Uuid
+  customerId    String    @db.Uuid @map("customer_id")
+  customer      Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  recipientName String    @map("recipient_name")
+  phone         String
+  country       String    @default("Россия")
+  region        String?
+  city          String
+  street        String
+  house         String
+  apartment     String?
+  postalCode    String?   @map("postal_code")
+  isDefault     Boolean   @default(false) @map("is_default")
+  comment       String?
+  createdAt     DateTime  @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([customerId])
+  @@map("customer_addresses")
+}
+
+model Request {
+  id                    String          @id @default(uuid()) @db.Uuid
+  number                String          @unique
+  customerId            String          @db.Uuid
+  customer              Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  assignedManagerId     String?         @db.Uuid
+  assignedManager       User?           @relation("AssignedManager", fields: [assignedManagerId], references: [id], onDelete: SetNull)
+  status                RequestStatus   @default(NEW)
+  priority              String          @default("NORMAL")
+  customerNameSnapshot  String?
+  customerPhoneSnapshot String?
+  customerEmailSnapshot String?
+  customerComment       String?
+  internalNote          String?
+  vehicleMake           String?         @map("vehicle_make")
+  vehicleModel          String?         @map("vehicle_model")
+  vehicleYear           String?         @map("vehicle_year")
+  vehicleVin            String?         @map("vehicle_vin")
+  managerNameSnapshot   String?         @map("manager_name_snapshot")
+  customerOfferStatus   CustomerOfferStatus? @map("customer_offer_status")
+  customerResponseStatus String?        @map("customer_response_status")
+  items                 RequestItem[]
+  tasks                 Task[]
+  offers                CustomerOffer[]
+  orders                Order[]
+  activityEvents        ActivityLog[]
+  createdAt             DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime        @updatedAt @db.Timestamptz(6)
+
+  @@index([status, priority, createdAt])
+  @@index([assignedManagerId, status])
+  @@index([customerId, createdAt])
+  @@map("requests")
+}
+
+model RequestItem {
+  id                  String              @id @default(uuid()) @db.Uuid
+  requestId           String              @db.Uuid
+  request             Request             @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  description         String
+  requestedPartNumber String?
+  quantity            Int                 @default(1)
+  conditionPreference String?
+  compatibilityNotes  String?
+  photos              Json?
+  supplierInquiries   SupplierInquiry[]
+  supplierQuotes      SupplierQuote[]
+  customerOfferItems  CustomerOfferItem[]
+  createdAt           DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime            @updatedAt @db.Timestamptz(6)
+
+  @@index([requestId])
+  @@index([requestedPartNumber])
+  @@map("request_items")
+}
+
+model Supplier {
+  id             String            @id @default(uuid()) @db.Uuid
+  name           String
+  countryCode    String            @db.Char(2)
+  contactName    String?
+  phone          String?
+  email          String?
+  specialization String?
+  terms          String?
+  status         SupplierStatus    @default(REVIEW)
+  internalNote   String?
+  legalName      String?           @map("legal_name")
+  innOrVat       String?           @map("inn_or_vat")
+  city           String?
+  warehouseAddress String?         @map("warehouse_address")
+  deliveryMethods String[]         @default([]) @map("delivery_methods")
+  pickupAvailable Boolean          @default(true) @map("pickup_available")
+  orderProcessingDays Int          @default(1) @map("order_processing_days")
+  supportedCurrencies String[]     @default(["RUB"]) @map("supported_currencies")
+  inquiries      SupplierInquiry[]
+  quotes         SupplierQuote[]
+  offers         SupplierOffer[]
+  importJobs     ImportJob[]
+  users          SupplierUser[]
+  invitations    SupplierInvitation[]
+  orderItems     OrderItem[]
+  createdAt      DateTime          @default(now()) @db.Timestamptz(6)
+  updatedAt      DateTime          @updatedAt @db.Timestamptz(6)
+
+  @@index([countryCode, status])
+  @@map("suppliers")
+}
+
+model SupplierInquiry {
+  id              String                @id @default(uuid()) @db.Uuid
+  requestItemId   String                @db.Uuid
+  requestItem     RequestItem           @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  supplierId      String                @db.Uuid
+  supplier        Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  status          SupplierInquiryStatus @default(DRAFT)
+  responseDueAt   DateTime?             @db.Timestamptz(6)
+  sentAt          DateTime?             @db.Timestamptz(6)
+  respondedAt     DateTime?             @db.Timestamptz(6)
+  internalComment String?
+  quotes          SupplierQuote[]
+  createdAt       DateTime              @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime              @updatedAt @db.Timestamptz(6)
+
+  @@index([requestItemId, status])
+  @@index([supplierId, status, responseDueAt])
+  @@map("supplier_inquiries")
+}
+
+model SupplierQuote {
+  id                 String              @id @default(uuid()) @db.Uuid
+  requestItemId      String              @db.Uuid
+  requestItem        RequestItem         @relation(fields: [requestItemId], references: [id], onDelete: Cascade)
+  supplierId         String              @db.Uuid
+  supplier           Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  inquiryId          String?             @db.Uuid
+  inquiry            SupplierInquiry?    @relation(fields: [inquiryId], references: [id], onDelete: SetNull)
+  partNumber         String?
+  manufacturer       String?
+  condition          String?
+  purchasePrice      Decimal?            @db.Decimal(18, 4)
+  currency           String?             @db.Char(3)
+  quantityAvailable  Int?
+  deliveryCost       Decimal?            @db.Decimal(18, 4)
+  deliveryCurrency   String?             @db.Char(3)
+  deliveryDays       Int?
+  shippingBasis      String?             @default("ORDER") @map("shipping_basis")
+  compatibilityNote  String?
+  sourceUrl          String?
+  internalComment    String?
+  validUntil         DateTime?           @db.Timestamptz(6)
+  status             SupplierQuoteStatus @default(RECEIVED)
+  customerOfferItems CustomerOfferItem[]
+  createdAt          DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(6)
+
+  @@index([requestItemId, status, validUntil])
+  @@index([supplierId, createdAt])
+  @@map("supplier_quotes")
+}
+
+model CustomerOffer {
+  id                 String              @id @default(uuid()) @db.Uuid
+  requestId          String              @db.Uuid
+  request            Request             @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  version            Int
+  status             CustomerOfferStatus @default(DRAFT)
+  currency           String              @default("RUB") @db.Char(3)
+  customerNote       String?
+  sharedLogisticsRub Decimal?            @db.Decimal(18, 4) @map("shared_logistics_rub")
+  responseStatus     String?             @default("NO_RESPONSE") @map("response_status")
+  sentAt             DateTime?           @db.Timestamptz(6) @map("sent_at")
+  snapshot           Json?
+  items              CustomerOfferItem[]
+  createdAt          DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(6)
+
+  @@unique([requestId, version])
+  @@index([requestId, status])
+  @@map("customer_offers")
+}
+
+model CustomerOfferItem {
+  id                String        @id @default(uuid()) @db.Uuid
+  customerOfferId   String        @db.Uuid
+  customerOffer     CustomerOffer @relation(fields: [customerOfferId], references: [id], onDelete: Cascade)
+  requestItemId     String        @db.Uuid
+  requestItem       RequestItem   @relation(fields: [requestItemId], references: [id], onDelete: Restrict)
+  supplierQuoteId   String        @db.Uuid
+  supplierQuote     SupplierQuote @relation(fields: [supplierQuoteId], references: [id], onDelete: Restrict)
+  quantity          Int
+  customerUnitPrice Decimal       @db.Decimal(18, 4)
+  currency          String        @db.Char(3)
+  deliveryDays      Int?
+  conditionSnapshot String?
+  createdAt         DateTime      @default(now()) @db.Timestamptz(6)
+
+  @@unique([customerOfferId, requestItemId])
+  @@map("customer_offer_items")
+}
+
+model Task {
+  id          String     @id @default(uuid()) @db.Uuid
+  requestId   String?    @db.Uuid
+  request     Request?   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  orderId     String?    @db.Uuid
+  order       Order?     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  assigneeId  String?    @db.Uuid
+  assignee    User?      @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  title       String
+  description String?
+  priority    String?    @default("NORMAL")
+  category    String?
+  status      TaskStatus @default(OPEN)
+  dueAt       DateTime?  @db.Timestamptz(6)
+  reminderAt  DateTime?  @db.Timestamptz(6)
+  completedAt DateTime?  @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime   @updatedAt @db.Timestamptz(6)
+
+  @@index([assigneeId, status, dueAt])
+  @@index([requestId, status])
+  @@index([orderId, status])
+  @@map("tasks")
+}
+
+model ActivityLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @db.Uuid
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  requestId  String?  @db.Uuid
+  request    Request? @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  orderId    String?  @db.Uuid
+  order      Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  entityType String
+  entityId   String   @db.Uuid
+  action     String
+  details    Json?
+  occurredAt DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([entityType, entityId, occurredAt])
+  @@index([requestId, occurredAt])
+  @@index([orderId, occurredAt])
+  @@map("activity_log")
+}
+
+enum ProductStatus {
+  ACTIVE
+  ARCHIVED_SOLD
+  DRAFT
+}
+
+enum OfferCondition {
+  NEW
+  USED
+}
+
+enum OfferStatus {
+  IN_STOCK
+  ON_REQUEST
+  OUT_OF_STOCK
+  ARCHIVED_SOLD
+}
+
+model Product {
+  id             String          @id @default(uuid()) @db.Uuid
+  canonicalName  String          @map("canonical_name")
+  brand          String
+  category       String
+  primaryOem     String          @map("primary_oem")
+  oemCodes       String[]        @default([]) @map("oem_codes")
+  altArticles    String[]        @default([]) @map("alt_articles")
+  specs          Json?
+  applicability  Json?
+  photos         String[]        @default([])
+  description    String?         @db.Text
+  status         ProductStatus   @default(ACTIVE)
+  offers         SupplierOffer[]
+  orderItems     OrderItem[]
+  fitments       ProductFitment[]
+  createdAt      DateTime        @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt      DateTime        @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([primaryOem])
+  @@index([brand])
+  @@index([category])
+  @@index([status])
+  @@map("products")
+}
+
+model SupplierOffer {
+  id            String         @id @default(uuid()) @db.Uuid
+  productId     String         @db.Uuid @map("product_id")
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  supplierId    String         @db.Uuid @map("supplier_id")
+  supplier      Supplier       @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  source        String
+  externalId    String?        @map("external_id")
+  originalTitle String         @map("original_title")
+  rawArticle    String?        @map("raw_article")
+  purchasePrice Decimal?       @db.Decimal(18, 4) @map("purchase_price")
+  currency      String         @default("RUB") @db.Char(3)
+  quantity      Int            @default(1)
+  condition     OfferCondition @default(NEW)
+  status        OfferStatus    @default(IN_STOCK)
+  deliveryTerms String?        @map("delivery_terms")
+  deliveryDays  Int?           @map("delivery_days")
+  sourceUrl     String?        @map("source_url")
+  lastSeenAt    DateTime       @default(now()) @db.Timestamptz(6) @map("last_seen_at")
+  orderItems    OrderItem[]
+  createdAt     DateTime       @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt     DateTime       @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([productId, status])
+  @@index([supplierId, status])
+  @@index([source, status])
+  @@index([rawArticle])
+  @@unique([supplierId, source, externalId])
+  @@map("supplier_offers")
+}
+
+enum ImportJobStatus {
+  UPLOADED
+  PARSED
+  PREVIEW_READY
+  COMMITTING
+  COMPLETED
+  FAILED
+}
+
+enum ImportRowStatus {
+  VALID
+  INVALID
+  SKIPPED
+}
+
+enum ImportMatchType {
+  NEW_PRODUCT
+  MATCHED_EXISTING
+  AMBIGUOUS
+  DUPLICATE_IN_FEED
+  ERROR
+}
+
+model ImportJob {
+  id                 String          @id @default(uuid()) @db.Uuid
+  supplierId         String          @db.Uuid @map("supplier_id")
+  supplier           Supplier        @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  fileName           String          @map("file_name")
+  fileFormat         String          @map("file_format")
+  fileSize           Int             @map("file_size")
+  totalRows          Int             @default(0) @map("total_rows")
+  validRows          Int             @default(0) @map("valid_rows")
+  errorRows          Int             @default(0) @map("error_rows")
+  duplicateRows      Int             @default(0) @map("duplicate_rows")
+  newProductsCount   Int             @default(0) @map("new_products_count")
+  updatedOffersCount Int             @default(0) @map("updated_offers_count")
+  status             ImportJobStatus @default(UPLOADED)
+  errorSummary       String?         @db.Text @map("error_summary")
+  rows               ImportRow[]
+  createdAt          DateTime        @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt          DateTime        @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([supplierId, status])
+  @@index([createdAt])
+  @@map("import_jobs")
+}
+
+model ImportRow {
+  id               String          @id @default(uuid()) @db.Uuid
+  jobId            String          @db.Uuid @map("job_id")
+  job              ImportJob       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  rowIndex         Int             @map("row_index")
+  externalId       String?         @map("external_id")
+  rawOem           String?         @map("raw_oem")
+  normalizedOem    String?         @map("normalized_oem")
+  title            String
+  brand            String?
+  category         String?
+  price            Decimal?        @db.Decimal(18, 4)
+  currency         String          @default("RUB") @db.Char(3)
+  quantity         Int             @default(1)
+  condition        OfferCondition  @default(NEW)
+  deliveryTerms    String?         @map("delivery_terms")
+  deliveryDays     Int?            @map("delivery_days")
+  photos           String[]        @default([])
+  description      String?         @db.Text
+  city             String?
+  sourceUrl        String?         @map("source_url")
+  status           ImportRowStatus @default(VALID)
+  matchType        ImportMatchType @default(NEW_PRODUCT) @map("match_type")
+  matchedProductId String?         @db.Uuid @map("matched_product_id")
+  matchedOfferId   String?         @db.Uuid @map("matched_offer_id")
+  errors           String[]        @default([])
+  createdAt        DateTime        @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@index([jobId, status])
+  @@index([normalizedOem])
+  @@index([externalId])
+  @@map("import_rows")
+}
+
+model SupplierUser {
+  id         String             @id @default(uuid()) @db.Uuid
+  supplierId String             @db.Uuid @map("supplier_id")
+  supplier   Supplier           @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  userId     String             @unique @db.Uuid @map("user_id")
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role       SupplierUserRole   @default(MANAGER)
+  status     SupplierUserStatus @default(ACTIVE)
+  createdAt  DateTime           @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt  DateTime           @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([supplierId, status])
+  @@map("supplier_users")
+}
+
+model SupplierInvitation {
+  id          String           @id @default(uuid()) @db.Uuid
+  supplierId  String           @db.Uuid @map("supplier_id")
+  supplier    Supplier         @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  email       String
+  role        SupplierUserRole @default(MANAGER)
+  token       String           @unique
+  status      InvitationStatus @default(PENDING)
+  invitedById String?          @db.Uuid @map("invited_by_id")
+  expiresAt   DateTime         @db.Timestamptz(6) @map("expires_at")
+  acceptedAt  DateTime?        @db.Timestamptz(6) @map("accepted_at")
+  createdAt   DateTime         @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@index([supplierId, status])
+  @@index([token])
+  @@map("supplier_invitations")
+}
+
+model StaffInvitation {
+  id             String           @id @default(uuid()) @db.Uuid
+  email          String
+  name           String
+  jobTitle       String?          @map("job_title")
+  role           String           @default("MANAGER")
+  permissions    Json?
+  token          String           @unique
+  status         InvitationStatus @default(PENDING)
+  invitedById    String?          @db.Uuid @map("invited_by_id")
+  invitedBy      User?            @relation("StaffInvitationsCreated", fields: [invitedById], references: [id], onDelete: SetNull)
+  roleDefinition StaffRole        @relation(fields: [role], references: [code], onUpdate: Cascade, onDelete: Restrict)
+  expiresAt      DateTime         @db.Timestamptz(6) @map("expires_at")
+  acceptedAt     DateTime?        @db.Timestamptz(6) @map("accepted_at")
+  createdAt      DateTime         @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@index([email])
+  @@index([token])
+  @@index([status])
+  @@map("staff_invitations")
+}
+
+enum OrderStatus {
+  NEW
+  PENDING_PAYMENT
+  PAID
+  PENDING_PROCUREMENT
+  IN_FULFILLMENT
+  READY_FOR_SHIPMENT
+  SHIPPED
+  DELIVERED
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  REFUNDED
+  FAILED
+  CANCELLED
+}
+
+enum FulfillmentStatus {
+  UNFULFILLED
+  PROCUREMENT
+  PROCESSING
+  PARTIALLY_FULFILLED
+  FULFILLED
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  PENDING
+  DISPATCH_PREPARED
+  IN_TRANSIT
+  AT_PICKUP_POINT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  RETURNED
+  FAILED
+}
+
+enum OrderDocumentType {
+  INVOICE
+  WAYBILL
+  DISPATCH_NOTE
+  PACKING_LIST
+  RECEIPT
+}
+
+model Order {
+  id                    String            @id @default(uuid()) @db.Uuid
+  orderNumber           String            @unique @map("order_number")
+  requestId             String?           @db.Uuid @map("request_id")
+  request               Request?          @relation(fields: [requestId], references: [id], onDelete: SetNull)
+  customerId            String            @db.Uuid @map("customer_id")
+  customer              Customer          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  assignedManagerId     String?           @db.Uuid @map("assigned_manager_id")
+  assignedManager       User?             @relation("OrderAssignedManager", fields: [assignedManagerId], references: [id], onDelete: SetNull)
+  source                String            @default("CRM")
+  country               String            @default("Россия")
+  currency              String            @default("RUB") @db.Char(3)
+  status                OrderStatus       @default(NEW)
+  paymentStatus         PaymentStatus     @default(PENDING) @map("payment_status")
+  fulfillmentStatus     FulfillmentStatus @default(UNFULFILLED) @map("fulfillment_status")
+  deliveryStatus        DeliveryStatus    @default(PENDING) @map("delivery_status")
+  subtotal              Decimal           @db.Decimal(18, 4)
+  logisticsTotal        Decimal           @default(0) @db.Decimal(18, 4) @map("logistics_total")
+  discountTotal         Decimal           @default(0) @db.Decimal(18, 4) @map("discount_total")
+  taxTotal              Decimal           @default(0) @db.Decimal(18, 4) @map("tax_total")
+  grandTotal            Decimal           @db.Decimal(18, 4) @map("grand_total")
+  customerComment       String?           @map("customer_comment")
+  internalComment       String?           @map("internal_comment")
+  rejectionReason       String?           @map("rejection_reason")
+  logisticsInstructions String?           @map("logistics_instructions")
+  financialSnapshot     Json?             @map("financial_snapshot")
+  items                 OrderItem[]
+  payments              Payment[]
+  shipments             Shipment[]
+  documents             OrderDocument[]
+  messages              OrderMessage[]
+  tasks                 Task[]
+  activityEvents        ActivityLog[]
+  createdAt             DateTime          @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt             DateTime          @updatedAt @db.Timestamptz(6) @map("updated_at")
+  confirmedAt           DateTime?         @db.Timestamptz(6) @map("confirmed_at")
+  completedAt           DateTime?         @db.Timestamptz(6) @map("completed_at")
+
+  @@index([customerId, status])
+  @@index([assignedManagerId, status])
+  @@index([status, paymentStatus, deliveryStatus])
+  @@index([orderNumber])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                    String         @id @default(uuid()) @db.Uuid
+  orderId               String         @db.Uuid @map("order_id")
+  order                 Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId             String?        @db.Uuid @map("product_id")
+  product               Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  requestedPartNumber   String?        @map("requested_part_number")
+  nameOnPurchase        String         @map("name_on_purchase")
+  quantity              Int            @default(1)
+  condition             String?
+  supplierOfferId       String?        @db.Uuid @map("supplier_offer_id")
+  supplierOffer         SupplierOffer? @relation(fields: [supplierOfferId], references: [id], onDelete: SetNull)
+  supplierId            String?        @db.Uuid @map("supplier_id")
+  supplier              Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  purchasePrice         Decimal        @db.Decimal(18, 4) @map("purchase_price")
+  purchaseCurrency      String         @default("RUB") @db.Char(3) @map("purchase_currency")
+  fxRate                String         @default("1") @map("fx_rate")
+  supplierLogisticsCost Decimal        @default(0) @db.Decimal(18, 4) @map("supplier_logistics_cost")
+  markup                Decimal        @default(0) @db.Decimal(18, 4)
+  salePrice             Decimal        @db.Decimal(18, 4) @map("sale_price")
+  totalAmount           Decimal        @db.Decimal(18, 4) @map("total_amount")
+  grossProfit           Decimal        @default(0) @db.Decimal(18, 4) @map("gross_profit")
+  financialSnapshot     Json?          @map("financial_snapshot")
+  createdAt             DateTime       @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt             DateTime       @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([orderId])
+  @@index([requestedPartNumber])
+  @@map("order_items")
+}
+
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  orderId           String        @db.Uuid @map("order_id")
+  order             Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount            Decimal       @db.Decimal(18, 4)
+  currency          String        @default("RUB") @db.Char(3)
+  paymentMethod     String        @default("BANK_TRANSFER") @map("payment_method")
+  status            PaymentStatus @default(PENDING)
+  externalPaymentId String?       @map("external_payment_id")
+  paidAt            DateTime?     @db.Timestamptz(6) @map("paid_at")
+  notes             String?
+  history           Json?
+  createdAt         DateTime      @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt         DateTime      @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([orderId, status])
+  @@map("payments")
+}
+
+model Shipment {
+  id              String         @id @default(uuid()) @db.Uuid
+  orderId         String         @db.Uuid @map("order_id")
+  order           Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  carrier         String         @default("CDEK")
+  tariff          String?
+  deliveryMethod  String         @default("PICKUP_POINT") @map("delivery_method")
+  city            String?
+  address         String?
+  postalCode      String?        @map("postal_code")
+  pickupPointId   String?        @map("pickup_point_id")
+  trackingNumber  String?        @map("tracking_number")
+  cost            Decimal        @default(0) @db.Decimal(18, 4)
+  estimatedDays   Int?           @map("estimated_days")
+  status          DeliveryStatus @default(PENDING)
+  trackingHistory Json?          @map("tracking_history")
+  dispatchedAt    DateTime?      @db.Timestamptz(6) @map("dispatched_at")
+  deliveredAt     DateTime?      @db.Timestamptz(6) @map("delivered_at")
+  createdAt       DateTime       @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([orderId, status])
+  @@index([trackingNumber])
+  @@map("shipments")
+}
+
+model OrderDocument {
+  id             String            @id @default(uuid()) @db.Uuid
+  orderId        String            @db.Uuid @map("order_id")
+  order          Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  documentType   OrderDocumentType @default(INVOICE) @map("document_type")
+  documentNumber String            @map("document_number")
+  fileUrl        String?           @map("file_url")
+  contentJson    Json?             @map("content_json")
+  version        Int               @default(1)
+  createdById    String?           @db.Uuid @map("created_by_id")
+  createdAt      DateTime          @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt      DateTime          @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([orderId, documentType])
+  @@map("order_documents")
+}
+
+model OrderMessage {
+  id          String   @id @default(uuid()) @db.Uuid
+  orderId     String   @db.Uuid @map("order_id")
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  senderType  String   @default("STAFF") @map("sender_type")
+  isInternal  Boolean  @default(true) @map("is_internal")
+  message     String
+  attachments Json?
+  authorName  String   @map("author_name")
+  createdAt   DateTime @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@index([orderId, isInternal])
+  @@map("order_messages")
+}
+
+// =============================================================================
+// ZAPTUT GLOBAL VEHICLE DATABASE
+// =============================================================================
+
+enum VehicleDataCompleteness {
+  FULL
+  STANDARD
+  BASIC
+  PARTIAL
+}
+
+enum VehicleAliasTarget {
+  MAKE
+  MODEL
+  GENERATION
+}
+
+model VehicleDataSource {
+  id           String                @id // e.g. "vehiclesdb", "meterapp", "zaptut-regional"
+  name         String
+  version      String
+  license      String
+  licenseUrl   String?               @map("license_url")
+  homepage     String?
+  description  String?               @db.Text
+  recordsCount Int                   @default(0) @map("records_count")
+  lastImportAt DateTime              @default(now()) @db.Timestamptz(6) @map("last_import_at")
+  createdAt    DateTime              @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt    DateTime              @updatedAt @db.Timestamptz(6) @map("updated_at")
+  sources      VehicleSourceRecord[]
+
+  @@map("vehicle_data_sources")
+}
+
+model VehicleSourceRecord {
+  id               String            @id @default(uuid()) @db.Uuid
+  sourceId         String            @map("source_id")
+  source           VehicleDataSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  entityType       String            @map("entity_type") // MAKE, MODEL, GENERATION, ENGINE, MODIFICATION
+  entityId         String            @map("entity_id")
+  sourceExternalId String?           @map("source_external_id")
+  sourceData       Json?             @map("source_data")
+  importedAt       DateTime          @default(now()) @db.Timestamptz(6) @map("imported_at")
+
+  @@unique([sourceId, entityType, entityId])
+  @@index([entityType, entityId])
+  @@map("vehicle_source_records")
+}
+
+model VehicleBodyType {
+  code   String @id // SEDAN, SUV, HATCHBACK, WAGON, COUPE, CABRIO, MINIVAN, PICKUP, VAN, LCV
+  name   String
+  nameRu String @map("name_ru")
+
+  @@map("vehicle_body_types")
+}
+
+model VehicleMake {
+  id                 String                  @id // slug, e.g. "toyota", "volkswagen", "lada"
+  name               String
+  nameRu             String?                 @map("name_ru")
+  country            String?
+  logoUrl            String?                 @map("logo_url")
+  isPopular          Boolean                 @default(false) @map("is_popular")
+  category           String                  @default("PASSENGER") // PASSENGER, COMMERCIAL, MOTO
+  completenessStatus VehicleDataCompleteness @default(STANDARD) @map("completeness_status")
+  primarySourceId    String?                 @map("primary_source_id")
+  models             VehicleModel[]
+  aliases            VehicleAlias[]
+  customerVehicles   CustomerVehicle[]       @relation("CustomerVehicleMake")
+  productFitments    ProductFitment[]
+  createdAt          DateTime                @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt          DateTime                @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([name])
+  @@index([nameRu])
+  @@index([isPopular])
+  @@map("vehicle_makes")
+}
+
+model VehicleModel {
+  id                 String                  @id // slug, e.g. "toyota-camry", "lada-vesta"
+  makeId             String                  @map("make_id")
+  make               VehicleMake             @relation(fields: [makeId], references: [id], onDelete: Cascade)
+  name               String
+  nameRu             String?                 @map("name_ru")
+  yearFrom           Int?                    @map("year_from")
+  yearTo             Int?                    @map("year_to")
+  isPopular          Boolean                 @default(false) @map("is_popular")
+  category           String                  @default("CAR") // CAR, SUV, LCV, TRUCK
+  completenessStatus VehicleDataCompleteness @default(STANDARD) @map("completeness_status")
+  primarySourceId    String?                 @map("primary_source_id")
+  generations        VehicleGeneration[]
+  aliases            VehicleAlias[]
+  customerVehicles   CustomerVehicle[]       @relation("CustomerVehicleModel")
+  productFitments    ProductFitment[]
+  createdAt          DateTime                @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt          DateTime                @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([makeId])
+  @@index([name])
+  @@index([nameRu])
+  @@index([isPopular])
+  @@map("vehicle_models")
+}
+
+model VehicleGeneration {
+  id                 String                  @id // slug, e.g. "toyota-camry-xv70-restyling"
+  modelId            String                  @map("model_id")
+  model              VehicleModel            @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  name               String
+  shortName          String?                 @map("short_name")
+  code               String?
+  yearFrom           Int                     @map("year_from")
+  yearTo             Int?                    @map("year_to")
+  isRestyling        Boolean                 @default(false) @map("is_restyling")
+  defaultBodyType    String?                 @map("default_body_type")
+  completenessStatus VehicleDataCompleteness @default(STANDARD) @map("completeness_status")
+  years              VehicleYear[]
+  engines            VehicleEngine[]
+  modifications      VehicleModification[]
+  aliases            VehicleAlias[]
+  customerVehicles   CustomerVehicle[]       @relation("CustomerVehicleGeneration")
+  productFitments    ProductFitment[]
+  createdAt          DateTime                @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt          DateTime                @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([modelId])
+  @@index([yearFrom, yearTo])
+  @@map("vehicle_generations")
+}
+
+model VehicleYear {
+  generationId String            @map("generation_id")
+  generation   VehicleGeneration @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  year         Int
+
+  @@id([generationId, year])
+  @@index([year])
+  @@map("vehicle_years")
+}
+
+model VehicleEngine {
+  id             String                @id // slug, e.g. "toyota-a25a-fks"
+  generationId   String                @map("generation_id")
+  generation     VehicleGeneration     @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  name           String
+  code           String?
+  fuelType       String?               @map("fuel_type") // PETROL, DIESEL, HYBRID, ELECTRIC, LPG
+  displacementCc Int?                  @map("displacement_cc")
+  powerHp        Int?                  @map("power_hp")
+  powerKw        Int?                  @map("power_kw")
+  modifications  VehicleModification[]
+  createdAt      DateTime              @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt      DateTime              @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([generationId])
+  @@index([code])
+  @@map("vehicle_engines")
+}
+
+model VehicleModification {
+  id                 String                  @id // slug, e.g. "toyota-camry-xv70-2-5-at-prestige"
+  generationId       String                  @map("generation_id")
+  generation         VehicleGeneration       @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  engineId           String?                 @map("engine_id")
+  engine             VehicleEngine?          @relation(fields: [engineId], references: [id], onDelete: SetNull)
+  name               String
+  bodyType           String?                 @map("body_type")
+  transmission       String?
+  drivetrain         String?
+  yearFrom           Int?                    @map("year_from")
+  yearTo             Int?                    @map("year_to")
+  completenessStatus VehicleDataCompleteness @default(STANDARD) @map("completeness_status")
+  customerVehicles   CustomerVehicle[]       @relation("CustomerVehicleModification")
+  productFitments    ProductFitment[]
+  createdAt          DateTime                @default(now()) @db.Timestamptz(6) @map("created_at")
+  updatedAt          DateTime                @updatedAt @db.Timestamptz(6) @map("updated_at")
+
+  @@index([generationId])
+  @@index([engineId])
+  @@map("vehicle_modifications")
+}
+
+model VehicleAlias {
+  id           String             @id @default(uuid()) @db.Uuid
+  alias        String // normalized lower-case for fast indexed search
+  rawText      String             @map("raw_text")
+  targetType   VehicleAliasTarget @map("target_type") // MAKE, MODEL, GENERATION
+  makeId       String?            @map("make_id")
+  make         VehicleMake?       @relation(fields: [makeId], references: [id], onDelete: Cascade)
+  modelId      String?            @map("model_id")
+  model        VehicleModel?      @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  generationId String?            @map("generation_id")
+  generation   VehicleGeneration? @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  createdAt    DateTime           @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@index([alias])
+  @@index([makeId])
+  @@index([modelId])
+  @@index([generationId])
+  @@map("vehicle_aliases")
+}
+
+model ProductFitment {
+  id             String               @id @default(uuid()) @db.Uuid
+  productId      String               @db.Uuid @map("product_id")
+  product        Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  makeId         String               @map("make_id")
+  make           VehicleMake          @relation(fields: [makeId], references: [id], onDelete: Cascade)
+  modelId        String?              @map("model_id")
+  model          VehicleModel?        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  generationId   String?              @map("generation_id")
+  generation     VehicleGeneration?   @relation(fields: [generationId], references: [id], onDelete: Cascade)
+  modificationId String?              @map("modification_id")
+  modification   VehicleModification? @relation(fields: [modificationId], references: [id], onDelete: Cascade)
+  yearFrom       Int?                 @map("year_from")
+  yearTo         Int?                 @map("year_to")
+  notes          String?
+  position       String?
+  isUniversal    Boolean              @default(false) @map("is_universal")
+  createdAt      DateTime             @default(now()) @db.Timestamptz(6) @map("created_at")
+
+  @@index([productId])
+  @@index([makeId, modelId, generationId])
+  @@index([modificationId])
+  @@map("product_fitments")
+}

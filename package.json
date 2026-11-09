@@ -1,0 +1,45 @@
+{
+  "name": "zaptut-pro",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "test:customers": "node --experimental-strip-types --test src/lib/customer-model.test.mjs",
+    "test:finance": "node --experimental-strip-types --test src/lib/financial-config.test.mjs",
+    "test:orders": "node --conditions=react-server --import ./src/lib/server/test-loader.mjs --experimental-strip-types --test src/lib/server/order-service.db-test.mjs",
+    "test:portal": "node --conditions=react-server --import ./src/lib/server/test-loader.mjs --experimental-strip-types --test src/lib/server/customer-portal.db-test.mjs",
+    "test:staff": "node --conditions=react-server --import ./src/lib/server/test-loader.mjs --experimental-strip-types --test src/lib/server/staff-management-service.db-test.mjs",
+    "test:server": "node --experimental-strip-types --test src/lib/server/*.test.mjs",
+    "test:auth": "node --experimental-strip-types --test src/lib/server/staff-rbac.test.mjs src/lib/server/auth-password.test.mjs",
+    "test:server:integration": "node --conditions=react-server --import ./src/lib/server/test-loader.mjs --experimental-strip-types --test --test-concurrency=1 src/lib/server/*.db-test.mjs",
+    "db:generate": "prisma generate",
+    "db:validate": "prisma validate",
+    "auth:create-super-admin": "node --env-file=.env scripts/create-super-admin.mjs"
+  },
+  "dependencies": {
+    "@better-auth/prisma-adapter": "^1.7.18",
+    "@netlify/plugin-nextjs": "^5.16.6",
+    "@prisma/client": "^6.19.3",
+    "better-auth": "^1.7.18",
+    "fast-xml-parser": "^5.12.0",
+    "next": "15.5.6",
+    "prisma": "^6.19.3",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "server-only": "^0.0.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "15.5.6",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}
