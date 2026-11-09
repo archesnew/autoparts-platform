@@ -4,13 +4,21 @@
 
 ## Перенос проекта, Онлайн-развёртывание и Публичная DEMO CRM
 
-- **Состояние онлайн-развёртывания (2026-11-09):**
-  - Подключен официальный адаптер `@netlify/plugin-nextjs` для Next.js App Router (SSR, API routes, middleware).
-  - Скомпрометированный `BETTER_AUTH_SECRET` удалён и заменён на новый нераскрытый 256-битный токен в переменных окружения Netlify.
-  - В Netlify отключен SSO Team Login (сайт и `/login` публично доступны).
-  - **Текущий статус:** `BLOCKED` (требуются действия владельца):
-    1. GitHub: локальный репозиторий ожидает разрешения на `git commit` и `git push` в приватный `archesnew/autoparts-platform` и привязку в панели Netlify.
-    2. База данных: в облаке Netlify `localhost:5432` недоступен. Требуется создание инстанса PostgreSQL (Neon / Supabase) для staging и передача строки подключения `DATABASE_URL`.
+- **Состояние онлайн-развёртывания, Neon Staging и архив (2026-11-09):**
+  - Облачная ветка Neon `staging` (`br-muddy-mouse-bdg3o06x`, compute `ep-snowy-glade-bdfzq7o3`) в проекте `cool-bread-02284827`.
+  - Все 10 миграций Prisma применены к базе staging.
+  - База наполнена демонстрационными данными (учётные записи `owner@zaptut.pro` и `demo.partner@zaptut.pro`, клиенты, поставщики, заявки и заказы со статусами).
+  - Собрана чистая копия проекта для развёртывания `zaptut-staging-upload.zip` (1.13 МБ) в корне проекта (без `.env`, без `node_modules`).
+  - В Netlify через API сконфигурированы переменные: `DATABASE_URL` (Neon pooled), `DIRECT_URL` (Neon direct), `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `SMS_PROVIDER=mock`.
+  - Локальная база `zaptut_dev` осталась полностью нетронутой.
+
+- **Состояние онлайн-развёртывания и Neon Auth (2026-11-09):**
+  - Подключен облачный проект Neon `cool-bread-02284827` (ветка `production`).
+  - Активирован сервис Neon Managed Better Auth (`neon.ts`, `neon deploy`).
+  - В доверенные домены Neon Auth добавлен staging-домен `https://zaptut-staging.netlify.app`.
+  - Установлен SDK `@neon/auth`, создан клиент `src/lib/neon-auth-client.ts` с поддержкой регистрации и входа по email/password.
+  - Проверено создание реального пользователя через Neon Auth API (ID `4635c033-8b05-465b-8f22-b8fdc816d915`) и чтение профиля.
+  - Секреты и пароли защищены от вывода.
 
 - **Публичный демонстрационный контур CRM и безопасный DEMO VIEWER (2026-11-09):**
   - Создан проект `zaptut-staging` в Netlify (`16986334-c4a0-4a05-a157-2986fa3b12a4`) на техническом адресе `https://zaptut-staging.netlify.app`.

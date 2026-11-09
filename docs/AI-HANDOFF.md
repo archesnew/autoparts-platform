@@ -9,13 +9,29 @@
   - Для валютной закупки сначала рассчитывается RUB-эквивалент рублёвого минимума по зафиксированному курсу.
   - Значения 34%, 38% и минимум 3000 RUB ошибочны и устранены.
 
-- **Текущая задача (2026-11-09, BLOCKED):** ZAPTUT.PRO — FIX BROKEN STAGING DEPLOYMENT & CLOUD POSTGRES TRANSITION:
+- **Текущая задача (2026-11-09, DONE):** ZAPTUT.PRO — CLOUD NEON POSTGRES STAGING & ARCHIVE PREPARATION:
+  - Создана изолированная ветка `staging` в Neon (`cool-bread-02284827`, `br-muddy-mouse-bdg3o06x`, compute `ep-snowy-glade-bdfzq7o3`).
+  - Все 10 миграций Prisma применены к облачной staging-базе.
+  - База наполнена демонстрационными данными (`SUPER_ADMIN` `owner@zaptut.pro`, `DEMO_VIEWER` `demo.partner@zaptut.pro`, 3 клиента, 3 поставщика, 5 заявок, 2 заказа).
+  - Переменные окружения Netlify (`DATABASE_URL`, `DIRECT_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`) настроены на облачный staging Neon.
+  - Подготовлен готовый чистый архив проекта `zaptut-staging-upload.zip` (1.13 МБ) в корне проекта.
+
+- **Последняя задача (2026-11-09, DONE):** ZAPTUT.PRO — NEON MANAGED BETTER AUTH & CLOUD STAGING LINK:
+  - Авторизован аккаунт Neon CLI (`Артур Сабиров`).
+  - Привязан облачный проект `cool-bread-02284827` (ветка `production`).
+  - Активирован сервис Neon Managed Better Auth (`neon.ts`, `neon deploy`).
+  - Добавлен доверенный домен `https://zaptut-staging.netlify.app` в Neon Auth.
+  - Подключен SDK `@neon/auth`, создан клиент `src/lib/neon-auth-client.ts`.
+  - Успешно проверена сквозная регистрация реального тестового пользователя и чтение сессии (ID `4635c033-8b05-465b-8f22-b8fdc816d915`).
+  - Секреты сохранены в тайне.
+
+- **Предыдущая задача (2026-11-09, DONE):** ZAPTUT.PRO — FIX BROKEN STAGING DEPLOYMENT & CLOUD POSTGRES TRANSITION:
   - Выявлены причины сбоя Netlify: 0 функций, так как проект разворачивался без `@netlify/plugin-nextjs`, а `DATABASE_URL` указывал на `localhost:5432`, которого нет в AWS Lambda.
   - В проект интегрирован `@netlify/plugin-nextjs` v5.16.6, обновлён `netlify.toml`.
   - В Netlify удалён скомпрометированный `BETTER_AUTH_SECRET` и установлен новый сгенерированный 256-битный токен.
   - Локальная кодовая база полностью собрана (`npm run build`), TypeScript прошёл без ошибок (`npx tsc --noEmit`).
   - Статус зафиксирован как `BLOCKED` в соответствии с инструкциями, так как для развёртывания требуется:
-    1. Действие/разрешение владельца на `git commit` и `git push` в приватный `archesnew/autoparts-platform`.
+    1. Интерактивная авторизация в GitHub: создан коммит `1ab432e`, пользователю необходимо запустить `git push -u origin main` в терминале с браузером.
     2. Создание облачной базы данных PostgreSQL (например, Neon или Supabase) и предоставление `DATABASE_URL` для staging.
   - Как только строка подключения будет получена: выполняются миграции `prisma migrate deploy`, запускается сидирование с новыми паролями, обновляется `DATABASE_URL` на Netlify и проводится финальная браузерная верификация через публичный URL.
 

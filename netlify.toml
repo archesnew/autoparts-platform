@@ -1,12 +1,12 @@
 # Netlify Configuration for ZAPTUT.PRO Staging Deployment
 
 [build]
-  command = "npm run build"
+  command = "prisma generate --schema=prisma/schema.prisma && next build"
   publish = ".next"
 
 [build.environment]
-  NODE_VERSION = "20"
-  NPM_FLAGS = "--include=dev"
+  NODE_VERSION = "22"
+  NPM_FLAGS = "--legacy-peer-deps"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"

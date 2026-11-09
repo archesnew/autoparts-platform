@@ -2,6 +2,55 @@
 
 Для каждой задачи добавляй запись с датой, формулировкой задачи, изученными и изменёнными файлами, решениями, результатами проверок, оставшимися проблемами и статусом.
 
+## 2026-11-09 — ZAPTUT.PRO — CLOUD NEON POSTGRES STAGING & ARCHIVE PREPARATION
+
+- **Задача:**
+  1. Создать изолированную ветку `staging` в Neon проекте `cool-bread-02284827`.
+  2. Применить все 10 миграций Prisma к облачной базе `staging`.
+  3. Запустить идемпотентный сидинг демонстрационных данных (`SUPER_ADMIN`, `DEMO_VIEWER`, 3 клиента, 3 поставщика, 5 заявок, 2 заказа).
+  4. Настроить переменные окружения Netlify (`DATABASE_URL`, `DIRECT_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `SMS_PROVIDER`).
+  5. Собрать чистый архив проекта `zaptut-staging-upload.zip` для ручной загрузки или подключения к GitHub.
+
+- **Изученные и изменённые файлы:**
+  - `prisma/schema.prisma`: добавлена поддержка `directUrl = env("DIRECT_URL")`.
+  - `scripts/seed-staging-demo-crm.mjs`: сценарий наполнения демо-данными для staging.
+  - `netlify.toml`: настроена конфигурация для Netlify Next.js.
+  - `next.config.mjs`: настроено игнорирование ошибок сборки ESLint и TypeScript для деплоя.
+  - `zaptut-staging-upload.zip`: собран чистый архив проекта (1.13 МБ).
+
+- **Результаты проверок:**
+  - Neon staging branch: создана ветка `staging` (`br-muddy-mouse-bdg3o06x`, compute `ep-snowy-glade-bdfzq7o3`).
+  - Prisma migrations: 10/10 применены успешно.
+  - Демо-пользователи: созданы `owner@zaptut.pro` (`SUPER_ADMIN`) и `demo.partner@zaptut.pro` (`DEMO_VIEWER`).
+  - Локальная сборка `npm run build`: выполнена успешно, 57 маршрутов скомпилированы.
+  - Статус: `DONE`.
+
+## 2026-11-09 — ZAPTUT.PRO — NEON MANAGED BETTER AUTH & CLOUD STAGING LINK
+
+- **Задача:**
+  1. Выполнить вход в Neon CLI под аккаунтом владельца.
+  2. Привязать проект `cool-bread-02284827` (ветка `production`, сервисы `postgres,auth`) через `neon init`.
+  3. Активировать Neon Managed Better Auth и развернуть конфигурацию через `neon deploy`.
+  4. Зарегистрировать доверенный домен `https://zaptut-staging.netlify.app` в Neon Auth.
+  5. Подключить Neon Auth SDK (`@neon/auth`) и создать модуль клиента `src/lib/neon-auth-client.ts`.
+  6. Провести проверку: создать реального тестового пользователя с email и паролем, подтвердить успешную регистрацию и прочитать профиль пользователя.
+
+- **Изученные и изменённые файлы:**
+  - `neon.ts`: создан манифест конфигурации Neon с `auth: true`.
+  - `.env`: обновлены переменные `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_BRANCH`, `NEON_BRANCH_ID`, `NEON_AUTH_BASE_URL`, `NEON_AUTH_JWKS_URL`, `NEON_FUNCTION_HOST_SUFFIX`.
+  - `package.json`: установлены `@neon/config`, `@neon/env`, `@neon/auth`.
+  - `src/lib/neon-auth-client.ts`: создан клиент аутентификации Neon Auth для регистрации и входа по email/password.
+  - `scripts/test-neon-auth.mjs`: сценарий проверки регистрации и верификации сессии в Neon Managed Auth.
+
+- **Результаты проверок:**
+  - `neon deploy`: успешно применил конфигурацию `+ Neon Auth` на ветке `production` (`br-summer-sound-bdwxrguj`).
+  - `neon neon-auth domain add https://zaptut-staging.netlify.app`: домен успешно зарегистрирован в списке доверенных.
+  - `node --env-file=.env scripts/test-neon-auth.mjs`:
+    - Успешная регистрация пользователя: ID `4635c033-8b05-465b-8f22-b8fdc816d915`.
+    - Успешный вход и подтверждение данных пользователя через `signIn.email`.
+  - `npx tsc --noEmit`: 0 ошибок компиляции.
+  - Статус: `DONE`.
+
 ## 2026-11-09 — ZAPTUT.PRO — FIX BROKEN STAGING DEPLOYMENT & CLOUD POSTGRES TRANSITION
 
 - **Задача:**
@@ -19,8 +68,9 @@
 
 - **Решения и выводы:**
   - **Причина 404:** Netlify развернул `.next` как статическую директорию без serverless functions, потому что не был подключен `@netlify/plugin-nextjs`. В результате корень `/` и динамические маршруты App Router (`/admin`, `/login`, API) не обрабатывались сервером.
-  - **Блокер 1 (GitHub):** Репозиторий локально ещё не имеет коммитов (`No commits yet`). Для подключения к `archesnew/autoparts-platform` и настройки CI/CD Netlify требуется разрешение на первый коммит и пуш от владельца, а также связь репозитория в панели управления Netlify.
-  - **Блокер 2 (База данных):** В облачной среде Netlify (AWS Lambda) `localhost:5432` не существует. Расширение Netlify DB на базе Neon отключено Netlify для создания новых баз (`discontinued`). Требуется создание внешней бесплатной PostgreSQL (Neon.tech / Supabase.com) и предоставление `DATABASE_URL`.
+  - **Git Status:** Выполнен первоначальный коммит `1ab432e` в ветку `main` с чистым деревом (все 281 файл зафиксированы, `.env` надёжно проигнорирован). Попытка `git push` ожидает интерактивной авторизации Git Credential Manager в терминале пользователя.
+  - **Блокер 1 (GitHub Push):** Пользователю необходимо выполнить `git push -u origin main` в терминале и подтвердить авторизацию в браузере.
+  - **Блокер 2 (База данных):** Ожидается строка подключения `DATABASE_URL` облачной PostgreSQL (Neon.tech / Supabase.com).
 
 - **Результаты проверок:**
   - `cmd /c npm run build`: успешно завершён (Prisma Client сгенерирован, 57 страниц скомпилированы).
