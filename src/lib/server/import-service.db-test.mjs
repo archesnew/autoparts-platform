@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { PrismaClient } from "@prisma/client";
 import { parseFeedBuffer, parseCsv } from "./import/feed-parser.ts";
 import { normalizeFeedRow } from "./import/field-normalizer.ts";
@@ -10,13 +10,13 @@ import { catalogService } from "./catalog-service.ts";
 
 const prisma = new PrismaClient();
 
-test("Feed Parser: parses YML, XML, CSV with different delimiters and XLSX", () => {
+test("Feed Parser: parses YML, XML, CSV with different delimiters and XLSX (Cyrillic + empty cells)", async () => {
   // 1. CSV with semicolon
   const csvSemi = Buffer.from(
     "Артикул;Название;Бренд;Цена;Количество\n51712-C1A00;Диск передний;NORTHLINE;6900;2\n28231-2F100;Турбина;MECHCORE;38000;1",
     "utf8"
   );
-  const parsedSemi = parseFeedBuffer("price.csv", csvSemi);
+  const parsedSemi = await parseFeedBuffer("price.csv", csvSemi);
   assert.equal(parsedSemi.format, "CSV");
   assert.equal(parsedSemi.rawRowCount, 2);
   assert.equal(parsedSemi.rows[0]["артикул"], "51712-C1A00");
@@ -26,7 +26,7 @@ test("Feed Parser: parses YML, XML, CSV with different delimiters and XLSX", () 
     'oem,title,brand,price,quantity\n58101-A6A00,"Колодки передние",NORTHLINE,4200,5\n37300-2E300,Генератор,PARTS LAB,12500,1',
     "utf8"
   );
-  const parsedComma = parseFeedBuffer("feed.csv", csvComma);
+  const parsedComma = await parseFeedBuffer("feed.csv", csvComma);
   assert.equal(parsedComma.rawRowCount, 2);
   assert.equal(parsedComma.rows[0]["oem"], "58101-A6A00");
 
@@ -45,7 +45,7 @@ test("Feed Parser: parses YML, XML, CSV with different delimiters and XLSX", () 
     </offers>
   </shop>
 </yml_catalog>`, "utf8");
-  const parsedYml = parseFeedBuffer("catalog.yml", ymlSample);
+  const parsedYml = await parseFeedBuffer("catalog.yml", ymlSample);
   assert.equal(parsedYml.format, "YML");
   assert.equal(parsedYml.rawRowCount, 1);
   assert.equal(parsedYml.rows[0]["name"], "Стойка амортизатора");
@@ -61,25 +61,25 @@ test("Feed Parser: parses YML, XML, CSV with different delimiters and XLSX", () 
     <brand>PARTS LAB</brand>
   </item>
 </items>`, "utf8");
-  const parsedXml = parseFeedBuffer("avito.xml", xmlSample);
+  const parsedXml = await parseFeedBuffer("avito.xml", xmlSample);
   assert.equal(parsedXml.format, "XML");
   assert.equal(parsedXml.rawRowCount, 1);
   assert.equal(parsedXml.rows[0]["oem"], "58130-A6A00");
 
-  // 5. XLSX feed
-  const wb = XLSX.utils.book_new();
-  const wsData = [
-    ["oem", "title", "price", "brand"],
-    ["51712-C1A00", "Диск тормозной вентилируемый", 6940, "NORTHLINE"],
-  ];
-  const ws = XLSX.utils.aoa_to_sheet(wsData);
-  XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
-  const xlsxBuf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+  // 5. XLSX feed via ExcelJS (Cyrillic headers/values + empty cell handling)
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Прайс");
+  ws.addRow(["Артикул", "Название", "Цена", "Бренд", "Примечание"]);
+  ws.addRow(["51712-C1A00", "Диск тормозной вентилируемый", 6940, "NORTHLINE", ""]);
+  ws.addRow(["58101-A6A00", "Колодки тормозные передние", 4280, "NORTHLINE", null]);
+  const xlsxBuf = Buffer.from(await wb.xlsx.writeBuffer());
 
-  const parsedXlsx = parseFeedBuffer("feed.xlsx", xlsxBuf);
+  const parsedXlsx = await parseFeedBuffer("feed.xlsx", xlsxBuf);
   assert.equal(parsedXlsx.format, "XLSX");
-  assert.equal(parsedXlsx.rawRowCount, 1);
-  assert.equal(parsedXlsx.rows[0]["oem"], "51712-C1A00");
+  assert.equal(parsedXlsx.rawRowCount, 2);
+  assert.equal(parsedXlsx.rows[0]["артикул"], "51712-C1A00");
+  assert.equal(parsedXlsx.rows[0]["название"], "Диск тормозной вентилируемый");
+  assert.equal(parsedXlsx.rows[1]["примечание"], "");
 });
 
 test("Validation & Normalization: handles invalid currency, missing OEM, and partial errors", () => {
@@ -171,10 +171,10 @@ BAD-ITEM-99;Ошибка валюты;BRAND;1000;1;NEW;feed-offer-03`,
   assert.ok(foundNew, "Newly imported product must be found in public catalog");
   assert.equal(foundNew.canonicalName, "Новый тестовый узел подвески");
 
-  // 4. Verification: Purchase price is NOT leaked in public DTO!
+  // 4. Verification: Purchase price is NOT leaked in public DTO and RU 28% markup is applied!
   assert.equal("purchasePrice" in foundNew, false);
   assert.equal("purchasePrice" in foundNew.offers[0], false);
-  assert.equal(foundNew.offers[0].publicPrice, 14500);
+  assert.equal(foundNew.offers[0].publicPrice, 18560);
 
   // 5. Idempotent re-upload: Re-uploading the same feed must update, NOT duplicate!
   const reStaged = await service.stageImportJob({

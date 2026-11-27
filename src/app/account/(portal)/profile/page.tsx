@@ -26,6 +26,10 @@ export default function CustomerProfilePage() {
   const [phoneChangeError, setPhoneChangeError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
 
+  // 152-ФЗ Erasure State
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   // Load detailed profile on mount
   useEffect(() => {
     async function loadProfile() {
@@ -163,6 +167,22 @@ export default function CustomerProfilePage() {
       await fetch("/api/auth/sign-out", { method: "POST" });
     } catch {}
     window.location.href = "/account/login";
+  }
+
+  // 152-ФЗ Data Erasure Handler
+  async function handleDeleteAccount() {
+    setDeleteLoading(true);
+    try {
+      const res = await fetch("/api/customer/profile", { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Не удалось отправить запрос");
+      alert(data.message || "Согласие отозвано. Персональные данные удалены.");
+      window.location.href = "/";
+    } catch (err: any) {
+      alert(err.message || "Ошибка отзыва согласия");
+      setDeleteLoading(false);
+      setDeleteConfirmOpen(false);
+    }
   }
 
   return (
@@ -309,6 +329,55 @@ export default function CustomerProfilePage() {
           >
             Выйти из аккаунта ↪
           </button>
+        </div>
+      </section>
+
+      {/* 152-ФЗ Personal Data & Erasure section */}
+      <section className="border border-[#383e41] bg-[#1e2124] p-5 sm:p-7">
+        <h2 className="text-xs font-black uppercase tracking-wider text-[#ff6428]">
+          Конфиденциальность и персональные данные (152-ФЗ)
+        </h2>
+        <p className="mt-1 text-[11px] leading-relaxed text-[#888b8d]">
+          В соответствии со статьями 14 и 21 Федерального закона № 152-ФЗ «О персональных данных», вы имеете право
+          на получение сведений об обработке ваших данных, их уточнение, блокирование или полный отзыв согласия.
+        </p>
+
+        <div className="mt-5 border border-[#383e41]/80 bg-[#17191b] p-4 text-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <p className="font-bold text-[#f1f0eb]">Отзыв согласия и удаление аккаунта</p>
+              <p className="mt-0.5 text-[11px] text-[#888b8d]">
+                Деактивация доступа, прекращение обработки персональных данных и удаление информации в течение 30 календарных дней.
+              </p>
+            </div>
+            {deleteConfirmOpen ? (
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDeleteConfirmOpen(false)}
+                  className="border border-[#52595c] px-3 py-1.5 text-xs font-semibold text-[#888b8d]"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteAccount}
+                  disabled={deleteLoading}
+                  className="bg-red-600 px-3.5 py-1.5 text-xs font-bold uppercase text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleteLoading ? "Удаление..." : "Подтвердить отзыв"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmOpen(true)}
+                className="border border-red-900/60 bg-red-950/20 px-3.5 py-2 text-xs font-bold uppercase tracking-wider text-red-400 transition hover:border-red-600 hover:bg-red-950/40"
+              >
+                Отозвать согласие ✕
+              </button>
+            )}
+          </div>
         </div>
       </section>
 

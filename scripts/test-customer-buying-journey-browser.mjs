@@ -178,6 +178,11 @@ async function main() {
     await cdp.screenshot("screenshot-journey-catalog-cart.png");
 
     // 2. Perform Customer Phone OTP login in browser
+    const testPhone = process.env.QA_TEST_PHONE?.trim() || "+79990000001";
+    const testOtpCode = process.env.PHONE_AUTH_TEST_OTP_CODE?.trim();
+    if (!testOtpCode) {
+      throw new Error("Set PHONE_AUTH_TEST_OTP_CODE (and QA_TEST_PHONE / PHONE_AUTH_TEST_PHONES) to run OTP login.");
+    }
     console.log("\n--> 2. Performing Customer Phone OTP Login in Browser...");
     await cdp.navigate("http://localhost:3000/account/login?redirect=/catalog");
     await new Promise((r) => setTimeout(r, 1000));
@@ -187,12 +192,12 @@ async function main() {
         await fetch("/api/customer/auth/phone/send-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: "+79874023545" })
+          body: JSON.stringify({ phone: ${JSON.stringify(testPhone)} })
         });
         const res = await fetch("/api/customer/auth/phone/verify-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: "+79874023545", code: "111111" })
+          body: JSON.stringify({ phone: ${JSON.stringify(testPhone)}, code: ${JSON.stringify(testOtpCode)} })
         });
         return await res.json();
       })()

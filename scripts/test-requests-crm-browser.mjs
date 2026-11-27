@@ -87,8 +87,11 @@ async function main() {
   // Reset rate limits for test runner
   await prisma.rateLimit.deleteMany();
 
-  const adminEmail = "mr.artursabirov@gmail.com";
-  const adminPassword = "Duraki88!Duraki88!";
+  const adminEmail = process.env.ZAPTUT_ADMIN_EMAIL?.trim();
+  const adminPassword = process.env.ZAPTUT_ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    throw new Error("Set ZAPTUT_ADMIN_EMAIL and ZAPTUT_ADMIN_PASSWORD in environment.");
+  }
 
   // 1. Launch Chrome
   const port = 9225;

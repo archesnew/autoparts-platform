@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { PrismaClient } from "@prisma/client";
 import { hashPassword } from "better-auth/crypto";
 
@@ -13,23 +14,26 @@ async function main() {
   if (!catRes.ok) throw new Error(`Catalog returned ${catRes.status}`);
   console.log("✓ Catalog responded 200 OK");
 
-  // 2. Customer Phone Auth (Phone: +79874023545)
-  console.log("\n[2] Sending OTP to Customer +79874023545...");
+  // 2. Customer Phone Auth
+  const testPhone = process.env.QA_TEST_PHONE?.trim() || "+79990000001";
+  const otpCode = process.env.PHONE_AUTH_TEST_OTP_CODE?.trim();
+  if (!otpCode) {
+    throw new Error("Set PHONE_AUTH_TEST_OTP_CODE (and QA_TEST_PHONE / PHONE_AUTH_TEST_PHONES) to run OTP login in scripts.");
+  }
+  console.log(`\n[2] Sending OTP to Customer ${testPhone}...`);
   const sendRes = await fetch(`${BASE_URL}/api/customer/auth/phone/send-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ phone: "+79874023545" }),
+    body: JSON.stringify({ phone: testPhone }),
   });
-  const sendData = await sendRes.json();
-  const otpCode = sendData.devOtpCode || "111111";
-  console.log(`✓ OTP sent. Using verification code: ${otpCode}`);
+  await sendRes.json();
 
   console.log("Verifying OTP for customer login...");
   const otpRes = await fetch(`${BASE_URL}/api/customer/auth/phone/verify-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      phone: "+79874023545",
+      phone: testPhone,
       code: otpCode,
     }),
   });
@@ -109,7 +113,7 @@ async function main() {
   // 6. Manager Login in CRM
   console.log("\n[6] Manager login in CRM...");
   const mgrEmail = `journey-mgr-${Date.now()}@test.local`;
-  const mgrPass = "JourneyManager2026!Pass";
+  const mgrPass = crypto.randomBytes(12).toString("hex") + "!Qa1";
   const mgrUser = await prisma.user.create({
     data: {
       name: "Тест Менеджер CRM",

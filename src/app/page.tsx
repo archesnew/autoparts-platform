@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useState } from "react";
 import { BrandLogo } from "@/components/brand/brand-logo";
+import { IconMenu, IconUser } from "@/components/ui/icons";
 
 const modes = ["VIN", "OEM", "Название"] as const;
 type Mode = (typeof modes)[number];
@@ -62,25 +63,26 @@ export default function Home() {
     <main className="min-h-screen bg-[#17191b] text-[#f1f0eb]">
       {/* Header */}
       <header className="relative z-20 border-b border-[#383e41] bg-[#17191b]">
-        <div className="container flex min-h-[76px] items-center justify-between gap-2 sm:gap-4">
-          <Link href="#top" aria-label="ZAPTUT.PRO — на главную" className="block w-[142px] shrink-0 sm:w-[230px]">
-            <BrandLogo variant="dark" className="w-full" priority sizes="(max-width: 640px) 142px, 230px" />
+        <div className="container flex min-h-[72px] items-center justify-between gap-2 sm:min-h-[76px] sm:gap-4">
+          <Link href="#top" aria-label="ZAPTUT.PRO — на главную" className="block w-[116px] shrink-0 sm:w-[210px]">
+            <BrandLogo variant="dark" className="w-full" priority sizes="(max-width: 640px) 116px, 210px" />
           </Link>
           <nav aria-label="Основная навигация" className="hidden items-center gap-6 text-sm font-medium text-[#888b8d] xl:flex">
             <Link className="transition hover:text-[#f1f0eb]" href="/catalog">Каталог</Link>
             <Link className="transition hover:text-[#f1f0eb]" href="#how">Как это работает</Link>
-            <Link className="transition hover:text-[#f1f0eb]" href="#suppliers">Поставщикам</Link>
-            <Link className="transition hover:text-[#f1f0eb]" href="#about">О платформе</Link>
+            <Link className="transition hover:text-[#f1f0eb]" href="/delivery-info">Доставка</Link>
+            <Link className="transition hover:text-[#f1f0eb]" href="/about">О платформе</Link>
           </nav>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <Link
-              className="whitespace-nowrap border border-[#ff6428] bg-[#ff6428] px-3 py-2.5 text-xs font-extrabold uppercase tracking-wider text-[#17191b] transition hover:bg-[#ff8050] sm:px-4"
+              className="inline-flex min-h-10 items-center gap-1.5 whitespace-nowrap border border-[#ff6428] bg-[#ff6428] px-2.5 py-2 text-[11px] font-extrabold uppercase tracking-wider text-[#17191b] transition hover:bg-[#ff8050] sm:px-4 sm:text-xs"
               href="/account"
             >
-              <span>Кабинет 👤</span>
+              <IconUser className="h-3.5 w-3.5 shrink-0" />
+              <span>Кабинет</span>
             </Link>
             <Link
-              className="whitespace-nowrap border border-[#414749] bg-[#1e2124] px-3 py-2.5 text-xs font-bold uppercase tracking-wider text-[#f1f0eb] transition hover:border-[#ff6428] hover:text-[#ff6428] sm:px-4"
+              className="inline-flex min-h-10 items-center whitespace-nowrap border border-[#414749] bg-[#1e2124] px-2.5 py-2 text-[11px] font-bold uppercase tracking-wider text-[#f1f0eb] transition hover:border-[#ff6428] hover:text-[#ff6428] sm:px-4 sm:text-xs"
               href="#search"
             >
               <span className="sm:hidden">Поиск</span>
@@ -90,19 +92,20 @@ export default function Home() {
             <details className="relative xl:hidden">
               <summary
                 aria-label="Открыть меню"
-                className="flex h-10 w-10 cursor-pointer list-none items-center justify-center border border-[#414749] bg-[#1e2124] text-lg text-[#f1f0eb] transition hover:border-[#ff6428]"
+                className="flex h-10 w-10 cursor-pointer list-none items-center justify-center border border-[#414749] bg-[#1e2124] text-[#f1f0eb] transition hover:border-[#ff6428]"
               >
-                ☰
+                <IconMenu />
               </summary>
               <nav
                 aria-label="Меню сайта"
-                className="absolute right-0 top-12 grid min-w-56 gap-1 border border-[#383e41] bg-[#1e2124] p-2 text-sm text-[#f1f0eb] shadow-2xl"
+                className="absolute right-0 top-12 z-30 grid min-w-56 gap-1 border border-[#383e41] bg-[#1e2124] p-2 text-sm text-[#f1f0eb] shadow-2xl"
               >
                 <Link className="p-3 font-bold text-[#ff6428] transition hover:bg-[#222629]" href="/account">Личный кабинет</Link>
-                <Link className="p-3 transition hover:bg-[#222629] hover:text-[#ff6428]" href="/catalog">Каталог</Link>
-                <Link className="p-3 transition hover:bg-[#222629] hover:text-[#ff6428]" href="#how">Как это работает</Link>
-                <Link className="p-3 transition hover:bg-[#222629] hover:text-[#ff6428]" href="#suppliers">Поставщикам</Link>
-                <Link className="p-3 transition hover:bg-[#222629] hover:text-[#ff6428]" href="#about">О платформе</Link>
+                <Link className="p-3 font-semibold text-[#f1f0eb] transition hover:bg-[#222629] hover:text-[#ff6428]" href="/login">Вход в CRM (сотрудникам)</Link>
+                <Link className="p-3 transition hover:bg-[#222629] hover:text-[#ff6428]" href="/catalog">Каталог запчастей</Link>
+                <Link className="p-3 transition hover:bg-[#222629] hover:text-[#ff6428]" href="/delivery-info">Доставка</Link>
+                <Link className="p-3 transition hover:bg-[#222629] hover:text-[#ff6428]" href="/payment-info">Оплата</Link>
+                <Link className="p-3 transition hover:bg-[#222629] hover:text-[#ff6428]" href="/about">О платформе</Link>
               </nav>
             </details>
           </div>
@@ -268,15 +271,48 @@ export default function Home() {
       </section>
 
       {/* Footer */}
-      <footer id="suppliers" className="border-t border-[#383e41] bg-[#1e2124] py-8">
-        <div className="container flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
-          <Link href="#top" aria-label="ZAPTUT.PRO — наверх" className="block w-[190px]">
-            <BrandLogo variant="dark" className="w-full" sizes="190px" />
-          </Link>
-          <a href="mailto:partners@zaptut.pro" className="text-xs font-bold uppercase tracking-wider text-[#ff6428] transition hover:text-[#f1f0eb]">
-            Поставщикам — подключить каталог и B2B-фиды →
-          </a>
-          <span className="text-xs text-[#888b8d]">© 2026 · ZAPTUT.PRO</span>
+      <footer id="suppliers" className="border-t border-[#383e41] bg-[#1e2124] py-10">
+        <div className="container grid gap-6 md:grid-cols-[1.2fr_1.8fr] md:items-start">
+          <div>
+            <Link href="#top" aria-label="ZAPTUT.PRO — наверх" className="block w-[180px]">
+              <BrandLogo variant="dark" className="w-full" sizes="180px" />
+            </Link>
+            <p className="mt-3 max-w-xs text-xs leading-5 text-[#888b8d]">
+              Агрегатор автозапчастей с проверкой совместимости и поставками из России, Беларуси и Польши.
+            </p>
+            <a href="mailto:partners@zaptut.pro" className="mt-4 inline-block text-xs font-bold uppercase tracking-wider text-[#ff6428] transition hover:text-[#f1f0eb]">
+              Поставщикам — подключить B2B-фиды →
+            </a>
+          </div>
+          <div className="grid grid-cols-2 gap-6 text-xs sm:grid-cols-3">
+            <div>
+              <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#f1f0eb]">Платформа</p>
+              <ul className="space-y-2 text-[#888b8d]">
+                <li><Link href="/catalog" className="hover:text-[#ff6428] transition">Каталог деталей</Link></li>
+                <li><Link href="/about" className="hover:text-[#ff6428] transition">О компании</Link></li>
+                <li><Link href="/contacts" className="hover:text-[#ff6428] transition">Контакты</Link></li>
+                <li><Link href="/login" className="hover:text-[#ff6428] transition">Вход в CRM</Link></li>
+              </ul>
+            </div>
+            <div>
+              <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#f1f0eb]">Покупателям</p>
+              <ul className="space-y-2 text-[#888b8d]">
+                <li><Link href="/account" className="hover:text-[#ff6428] transition">Личный кабинет</Link></li>
+                <li><Link href="/payment-info" className="hover:text-[#ff6428] transition">Оплата</Link></li>
+                <li><Link href="/delivery-info" className="hover:text-[#ff6428] transition">Доставка</Link></li>
+                <li><Link href="/returns-warranty" className="hover:text-[#ff6428] transition">Возврат и гарантия</Link></li>
+              </ul>
+            </div>
+            <div>
+              <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-[#f1f0eb]">Документы</p>
+              <ul className="space-y-2 text-[#888b8d]">
+                <li><Link href="/privacy-policy" className="hover:text-[#ff6428] transition">Конфиденциальность</Link></li>
+                <li><Link href="/terms" className="hover:text-[#ff6428] transition">Соглашение</Link></li>
+                <li><Link href="/consent" className="hover:text-[#ff6428] transition">Обработка ПДн</Link></li>
+                <li className="pt-2 text-[#737d80]">© 2026 · ZAPTUT.PRO</li>
+              </ul>
+            </div>
+          </div>
         </div>
       </footer>
     </main>

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { SignOutButton } from "@/components/admin/sign-out-button";
+import { IconAnalytics, IconImport, IconOrders, IconSuppliers } from "@/components/ui/icons";
 import type { SupplierContext } from "@/lib/server/supplier-session";
 
 type Tab = "dashboard" | "products" | "import" | "profile";
@@ -389,25 +390,25 @@ export function SupplierClientPage({
           </div>
 
           <nav className="grid gap-1">
-            {[
-              ["dashboard", "Сводка", "📊"],
-              ["products", "Мои товары", "📦"],
-              ["import", "Импорт прайсов", "📥"],
-              ["profile", "Профиль компании", "🏢"],
-            ].map(([id, label, icon]) => (
+            {([
+              ["dashboard", "Сводка", IconAnalytics],
+              ["products", "Мои товары", IconOrders],
+              ["import", "Импорт прайсов", IconImport],
+              ["profile", "Профиль компании", IconSuppliers],
+            ] as const).map(([id, label, NavIcon]) => (
               <button
                 key={id}
                 onClick={() => setTab(id as Tab)}
-                className={`flex items-center gap-3 border-l-2 px-3 py-2.5 text-left text-xs font-bold transition ${
+                className={`flex min-h-10 items-center gap-3 border-l-2 px-3 py-2.5 text-left text-xs font-bold transition ${
                   tab === id
                     ? "border-[#ff6428] bg-[#2a2e31] text-[#f1f0eb]"
                     : "border-transparent text-[#aeb5b6] hover:bg-[#24282b] hover:text-[#f1f0eb]"
                 }`}
               >
-                <span>{icon}</span>
-                {label}
+                <NavIcon className="h-4 w-4 shrink-0 text-[#ff6428]" />
+                <span>{label}</span>
                 {id === "products" && totalOffers > 0 && (
-                  <span className="ml-auto text-[10px] text-[#888b8d]">{totalOffers}</span>
+                  <span className="ml-auto text-[10px] tabular-nums text-[#888b8d]">{totalOffers}</span>
                 )}
               </button>
             ))}
@@ -444,8 +445,8 @@ export function SupplierClientPage({
               </span>
             </div>
 
-            <div className="flex items-center gap-4">
-              <div className="text-right">
+            <div className="flex items-center gap-3 sm:gap-4">
+              <div className="hidden text-right sm:block">
                 <span className="block text-xs font-bold text-[#f1f0eb]">
                   {initialContext.name}
                 </span>
@@ -457,6 +458,30 @@ export function SupplierClientPage({
               <SignOutButton />
             </div>
           </header>
+
+          {/* Mobile & Tablet Navigation Bar */}
+          <div className="border-b border-[#343a3d] bg-[#202325] px-4 py-2 lg:hidden">
+            <div className="flex gap-1.5 overflow-x-auto">
+              {([
+                ["dashboard", "Сводка"],
+                ["products", "Мои товары"],
+                ["import", "Импорт прайсов"],
+                ["profile", "Профиль"],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  onClick={() => setTab(id as Tab)}
+                  className={`shrink-0 px-3 py-2 text-xs font-semibold transition ${
+                    tab === id
+                      ? "bg-[#ff6428] font-bold text-[#17191b]"
+                      : "text-[#c3c8ca] hover:text-[#f1f0eb]"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
 
           {/* Tab Content */}
           <main className="mx-auto max-w-7xl p-4 sm:p-8">

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import "dotenv/config";
 import { PrismaClient } from "@prisma/client";
 import { importService } from "../src/lib/server/import/import-service.ts";
@@ -28,11 +28,14 @@ async function main() {
   const ruUserEmail = `supplier.ru.${uniqueSuffix}@test.zaptut.pro`;
   const byUserEmail = `supplier.by.${uniqueSuffix}@test.zaptut.pro`;
 
+  const ephemeralPassRu = crypto.randomBytes(12).toString("hex") + "!Qa1";
+  const ephemeralPassBy = crypto.randomBytes(12).toString("hex") + "!Qa2";
+
   const ruSupplierUser = await supplierPortalService.createSupplierUser({
     supplierId: supplierRu.id,
     name: "Менеджер Север Авто",
     email: ruUserEmail,
-    password: "Password123!Secure",
+    password: ephemeralPassRu,
     role: "OWNER",
   });
   assert.ok(ruSupplierUser.id, "RU Supplier user created");
@@ -41,7 +44,7 @@ async function main() {
     supplierId: supplierBy.id,
     name: "Менеджер Минск Моторс",
     email: byUserEmail,
-    password: "Password123!Secure",
+    password: ephemeralPassBy,
     role: "MANAGER",
   });
   assert.ok(bySupplierUser.id, "BY Supplier user created");
@@ -67,21 +70,19 @@ OEM-REAL-CSV-04;"Дроссельная заслонка (дубль)";PIERBURG;
 ;"Деталь без артикула";NONAME;1000;1;Новая;Москва;1 день
 `;
   const csvBuffer = Buffer.from(csvContent, "utf8");
-  const parsedCsv = parseFeedBuffer("feed_ru.csv", csvBuffer);
+  const parsedCsv = await parseFeedBuffer("feed_ru.csv", csvBuffer);
   assert.equal(parsedCsv.format, "CSV");
   assert.equal(parsedCsv.rawRowCount, 6);
   console.log("  ✓ CSV parser: 6 rows parsed correctly with semicolons and BOM");
 
   // Format 2: XLSX (Excel binary)
-  const xlsxRows = [
-    { oem: "OEM-REAL-XLSX-01", name: "Амортизатор задний газовый", brand: "KYB", price: 3400, quantity: 4, condition: "Новая", city: "Минск" },
-    { oem: "OEM-REAL-XLSX-02", name: "Колодки тормозные керамика", brand: "BREMBO", price: 5100, quantity: 2, condition: "Новая", city: "Минск" },
-  ];
-  const ws = XLSX.utils.json_to_sheet(xlsxRows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Parts");
-  const xlsxBuffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
-  const parsedXlsx = parseFeedBuffer("feed_by.xlsx", xlsxBuffer);
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Parts");
+  ws.addRow(["oem", "name", "brand", "price", "quantity", "condition", "city"]);
+  ws.addRow(["OEM-REAL-XLSX-01", "Амортизатор задний газовый", "KYB", 3400, 4, "Новая", "Минск"]);
+  ws.addRow(["OEM-REAL-XLSX-02", "Колодки тормозные керамика", "BREMBO", 5100, 2, "Новая", "Минск"]);
+  const xlsxBuffer = Buffer.from(await wb.xlsx.writeBuffer());
+  const parsedXlsx = await parseFeedBuffer("feed_by.xlsx", xlsxBuffer);
   assert.equal(parsedXlsx.format, "XLSX");
   assert.equal(parsedXlsx.rawRowCount, 2);
   console.log("  ✓ XLSX parser: 2 rows parsed correctly without macros");
@@ -99,7 +100,7 @@ OEM-REAL-CSV-04;"Дроссельная заслонка (дубль)";PIERBURG;
   </item>
 </items>`;
   const xmlBuffer = Buffer.from(xmlContent, "utf8");
-  const parsedXml = parseFeedBuffer("feed_universal.xml", xmlBuffer);
+  const parsedXml = await parseFeedBuffer("feed_universal.xml", xmlBuffer);
   assert.equal(parsedXml.format, "XML");
   assert.equal(parsedXml.rawRowCount, 1);
   console.log("  ✓ XML parser: 1 row parsed correctly with XXE entity expansion disabled");
@@ -123,7 +124,7 @@ OEM-REAL-CSV-04;"Дроссельная заслонка (дубль)";PIERBURG;
   </shop>
 </yml_catalog>`;
   const ymlBuffer = Buffer.from(ymlContent, "utf8");
-  const parsedYml = parseFeedBuffer("feed_drom.yml", ymlBuffer);
+  const parsedYml = await parseFeedBuffer("feed_drom.yml", ymlBuffer);
   assert.equal(parsedYml.format, "YML");
   assert.equal(parsedYml.rawRowCount, 1);
   console.log("  ✓ YML parser: 1 offer parsed correctly from yml_catalog structure");

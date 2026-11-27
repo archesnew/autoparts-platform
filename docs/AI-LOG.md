@@ -2,6 +2,248 @@
 
 Для каждой задачи добавляй запись с датой, формулировкой задачи, изученными и изменёнными файлами, решениями, результатами проверок, оставшимися проблемами и статусом.
 
+## 2026-11-16 — ZAPTUT.PRO — ВНЕДРЕНИЕ ТЕХНИЧЕСКИХ ТРЕБОВАНИЙ 152-ФЗ И РОСКОМНАДЗОРА (DONE)
+
+- **Задача:**
+  1. Реализовать технический комплекс изменений по устранению рисков 152-ФЗ («О персональных данных»), ст. 18 ФЗ «О рекламе» и требований Роскомнадзора:
+     - Активные кликабельные гиперссылки на `/consent` и `/privacy-policy` под всеми точками захвата данных (форма авторизации по телефону, модалка подбора детали, корзина каталога, подвал каталога).
+     - Компонент Cookie-баннера (`CookieConsentBanner`) с выбором «Принять все» / «Только технические» и сохранением согласия в `localStorage` (`zaptut_cookie_consent_v1`).
+     - Локализация шрифтов Onest через `next/font/google` (self-hosted сборка Next.js) и полное исключение внешних трансграничных вызовов к `fonts.googleapis.com` / `fonts.gstatic.com`.
+     - Механизм отзыва согласия и уничтожения/обезличивания данных субъекта в соответствии со ст. 14, 21 152-ФЗ (API `DELETE /api/customer/profile` и кнопка в личном кабинете `/account/profile`).
+     - Актуализация правовых документов (`/privacy-policy`, `/consent`, `/contacts`, `/terms`) с детальным описанием оператора, целей, сроков хранения, категорий третьих лиц и регламента уничтожения по Приказу РКН № 179.
+
+- **Изученные и изменённые файлы:**
+  - `src/components/customer/phone-auth-form.tsx`: добавлены активные ссылки на `/consent`, `/privacy-policy` и `/terms` (`target="_blank"`).
+  - `src/app/catalog/page.tsx`: добавлен юридический дисклеймер со ссылками на Согласие и Политику под кнопкой отправки запроса на подбор деталей, а также ссылки на правовые документы в подвале каталога.
+  - `src/components/catalog/catalog-cart-drawer.tsx`: добавлены активные ссылки на `/consent` и `/privacy-policy` под кнопками оформления заказа для авторизованных и гостей.
+  - `src/components/ui/cookie-consent-banner.tsx`: создан доступный баннер согласия на cookies (дизайн #1e2124, акцент #ff6428, варианты выбора, доступность по WCAG).
+  - `src/app/layout.tsx`: подключен локальный шрифт `Onest` через `next/font/google` и внедрен `<CookieConsentBanner />`.
+  - `src/app/globals.css`: удален внешний `@import url("https://fonts.googleapis.com/...")`.
+  - `next.config.mjs`: удален `https://fonts.gstatic.com` из CSP директивы `font-src`.
+  - `src/lib/server/customer-portal-service.ts`: реализован метод `requestDataErasure(customerId)` (деактивация `active: false`, аннулирование всех активных сессий, анонимизация ФИО, очистка email, удаление сохраненных адресов и гаража с сохранением финансовых транзакций по 402-ФЗ).
+  - `src/app/api/customer/profile/route.ts`: добавлен обработчик `DELETE`, вызывающий `requestDataErasure`.
+  - `src/app/account/(portal)/profile/page.tsx`: добавлена секция «Управление персональными данными (152-ФЗ)» с двухэтапным подтверждением отзыва согласия.
+  - `src/app/privacy-policy/page.tsx`: обновлена Политика с учетом ст. 6, 14, 18.1, 21 152-ФЗ и Приказа РКН № 179.
+  - `src/app/consent/page.tsx`: конкретизированы цели обработки, категории третьих лиц, срок хранения и отдельное согласие на рекламу.
+  - `src/app/contacts/page.tsx`: указан контакт ответственного за обработку ПДн (`privacy@zaptut.pro`).
+  - `docs/PROJECT-STATE.md`, `docs/AI-HANDOFF.md`: актуализированы.
+
+- **Результаты проверок:**
+  - `node node_modules/typescript/bin/tsc --noEmit`: 0 ошибок.
+  - `npm run test:server`: 18/18 тестов пройдено успешно.
+  - `npm run test:portal`: 9/9 тестов пройдено успешно.
+  - Интеграционный тест `requestDataErasure`: подтверждено удаление сессий, деактивация профиля, анонимизация ПДн и очистка адресов/гаража в Neon PostgreSQL.
+  - HTTP проверка страниц `/privacy-policy`, `/consent`, `/terms`, `/contacts`: все возвращают статус 200 OK.
+  - Статус: **`DONE`** (`git commit` и `git push` не выполнялись согласно `AGENTS.md`).
+
+## 2026-11-16 — ZAPTUT.PRO — АУДИТ СООТВЕТСТВИЯ 152-ФЗ И ТРЕБОВАНИЯМ РОСКОМНАДЗОРА (DONE)
+
+- **Задача:**
+  1. Провести полный юридическо-технический аудит платформы ZAPTUT.PRO на соответствие Федеральному закону № 152-ФЗ «О персональных данных», закону о локализации баз данных № 242-ФЗ, требованиям Роскомнадзора и ст. 18 ФЗ «О рекламе».
+  2. Исследовать все точки сбора ПДн (форма авторизации по телефону, оформление заявки в корзине, модальное окно подбора детали, контакты), правовые документы (`/privacy-policy`, `/consent`, `/terms`), инфраструктурное размещение БД (Neon AWS eu-central-1) и внешние сетевые запросы (Google Fonts).
+  3. Составить матрицу рисков, таблицу штрафов КоАП РФ (ст. 13.11, 14.3) и разработать пошаговый Action Plan приведения платформы в полное соответствие.
+
+- **Изученные файлы:**
+  - `src/app/privacy-policy/page.tsx`, `src/app/consent/page.tsx`, `src/app/terms/page.tsx`, `src/app/contacts/page.tsx`: выявлены шаблонные плейсхолдеры вместо реквизитов оператора (`[Наименование организации / ИП]`), отсутствие обязательных разделов (сроки хранения, порядок уничтожения по Приказу РКН № 179, категории третьих лиц, спорная формулировка «бессрочно»).
+  - `src/components/customer/phone-auth-form.tsx`: текст согласия не содержит активных гиперссылок на Политику и Согласие.
+  - `src/app/catalog/page.tsx` (модалка подбора) и `src/components/catalog/catalog-cart-drawer.tsx`: отсутствие согласий и ссылок на правовые документы под кнопками отправки данных.
+  - `src/app/globals.css`: прямая загрузка `@import url("https://fonts.googleapis.com/...")` с серверов Google LLC в США (трансграничная передача IP-адресов без уведомления РКН).
+  - Инфраструктура: PostgreSQL размещена в Neon (AWS Франкфурт, Германия), что нарушает ч. 5 ст. 18 152-ФЗ (242-ФЗ) при сборе данных граждан РФ без первичной записи в РФ.
+
+- **Сформированный артефакт:**
+  - `C:\Users\Chessie\.gemini\antigravity\brain\406883d0-c503-4651-ad14-68931a440aa6\152-fz-rkn-audit-report.md`: детальный отчет с матрицей рисков, анализом по 7 блокам, таблицей санкций и 3-этапным планом устранения.
+
+- **Результаты и выводы:**
+  - Статус: **`DONE`** (аудит завершен, риски зафиксированы, пошаговые рекомендации сформированы).
+  - Резюме: техническая безопасность данных высока, но для запуска в юрисдикции РФ требуются: (1) кликабельные согласия под всеми формами сайта; (2) внедрение Cookie-баннера; (3) локализация шрифтов Onest; (4) актуализация реквизитов и разделов документов; (5) перенос первичной БД в РФ и подача уведомления в РКН.
+
+## 2026-11-16 — ZAPTUT.PRO — ALIEN EXPLORER TOTAL E2E & UX CONTROL (DONE)
+
+- **Задача:**
+  1. Выполнить полный («космический исследовательский / пришелец на новой планете») контроль всех пользовательских сценариев, интерфейсов, форм, ролей и защитных барьеров ZAPTUT.PRO с использованием скилов `e2e-testing-patterns`, `break-ui`, `impeccable`, `wcag-audit-patterns` и `ui-visual-validator`.
+  2. Проверить 29 маршрутов, адаптивность на Desktop (1440×900) и Mobile (390×844), отсутствие горизонтального скролла (`overflow: false`), целостность ссылок, отсутствие битых картинок, чистоту консоли и отсутствие runtime-исключений.
+  3. Проверить сквозные интерактивные сценарии: поиск в каталоге, каскадный фильтр авто, добавление в корзину/заявку, боковую шторку (Drawer), модальное окно быстрой заявки, кабинеты покупателя, CRM персонала, портал поставщика, защищенность эндпоинтов восстановления пароля и Phone OTP от утечек токенов, хаос-инъекции (XSS, SQLi, 800-символьные строки).
+
+- **Изученные и изменённые файлы:**
+  - `public/robots.txt`: удалён статический конфликтный файл `public/robots.txt` (`Disallow: /`), вызывавший HTTP 500 в Next.js из-за конфликта с `src/app/robots.ts`. Теперь динамический `src/app/robots.ts` корректно отдаёт 200 OK с правилами индексации и ссылкой на sitemap.
+  - `next.config.mjs`: обновлена директива `script-src` в `Content-Security-Policy` — в `development` режиме разрешён `unsafe-eval` для работы внутреннего React Fast Refresh / Webpack hot reload, а в `production` режиме строго запрещён.
+  - `scripts/mission-alien-explorer-audit.mjs`: разработан автономный скрипт глубокого аудита на Chrome DevTools Protocol (CDP) с замером метрик layout, сбором console errors, аудитом доступности и захватом 32 скриншотов верификации.
+  - `docs/AI-LOG.md`, `docs/PROJECT-STATE.md`, `docs/AI-HANDOFF.md`: зафиксированы результаты аудита, исправления и текущий статус.
+
+- **Результаты проверок:**
+  - Статический анализ: `npx tsc --noEmit` — 0 ошибок.
+  - Тестовые наборы:
+    - `npm run test:finance`: 19/19 успешно (все тарифные формулы 28%/55% и минимумы 300/1700 RUB подтверждены).
+    - `npm run test:auth`: 7/7 успешно (RBAC-матрица SUPER_ADMIN, MANAGER, ADMIN, LOGISTICS).
+    - `npm run test:customers`: 24/24 успешно (нормализация номеров, дедупликация, слияние).
+    - `npm run test:server`: 18/18 успешно (заявки, клиенты, поставщики, безопасность).
+  - Сквозной Chrome CDP аудит (`scripts/mission-alien-explorer-audit.mjs`):
+    - **Маршруты:** исследовано 29 страниц (Landing, Catalog, About, Contacts, Delivery, Payment, Returns, Privacy, Terms, Consent, Staff Login, Customer Phone Login, Register, Forgot Password, 404, CRM Dashboard, Requests, Orders, Customers, Staff, Import, Supplier Portal, Customer Account, Profile, Vehicles/Garage, Addresses, Orders History, Requests History, Notifications).
+    - **Адаптивность:** Desktop (1440px) и Mobile (390px) — **0 страниц с горизонтальным скроллом** (`overflow = false` на всех 29 страницах).
+    - **Медиа и ссылки:** **0 битых изображений** (`naturalWidth === 0` — 0), **0 битых ссылок** (15/15 внутренних ссылок вернули 200 OK).
+    - **SEO:** `/robots.txt` возвращает HTTP 200 (19 строк), `/sitemap.xml` возвращает HTTP 200 XML.
+    - **Chaos Probes:** инъекции XSS (`<script>alert(...)`), SQLi (`'; DROP TABLE...`), 800-символьные строки — все отражены без выполнения скриптов и без переполнения layout.
+    - **Рантайм:** **0 uncaught exceptions**, **0 console errors**.
+    - **Безопасность:** `/api/customer/auth/forgot-password` (статус 200, `tokenLeak: false`), `/api/customer/auth/phone/send-otp` (`devOtpLeak: false`), универсальный OTP `111111` отклоняется.
+  - Статус: **`DONE`** (сохранено 32 скриншота верификации; `git commit` и `git push` не выполнялись per `AGENTS.md`).
+
+## 2026-11-10 — ZAPTUT.PRO — FINAL VEHICLE SELECTOR & CATALOG UX (DONE)
+
+- **Задача:**
+  1. Завершить пользовательский сценарий выбора автомобиля в публичном каталоге `/catalog` с сохранением обоих режимов (ручной ввод RU/EN и открытие полного списка).
+  2. Проверить поиск (`BMW / БМВ`, `BMW X5`, `Toyota Camry / Тойота Камри`, `BYD Atto 3`, `Geely Monjaro / Джили Монджаро`, `Lada Vesta / Лада Веста`, `Mercedes-Benz / Мерседес`) и работу больших списков моделей (`Mercedes-Benz` 1587, `BMW` 1041) без рендера тысяч DOM-строк сразу.
+  3. Сделать так, чтобы выбор автомобиля сам по себе НЕ скрывал ассортимент: добавить отдельный переключатель «Только запчасти, подходящие моему автомобилю» (выключен по умолчанию; при включении — только `CONFIRMED` совместимость + понятное пустое состояние с восстановлением/заявкой).
+  4. Сохранять выбранное авто в компактном блоке каталога и честно отображать типы годов (`MODEL_YEAR`, `PRODUCTION_YEAR`, `REGISTRATION_YEAR`, `CATALOG_YEAR`).
+
+- **Изученные и изменённые файлы:**
+  - `src/lib/server/vehicle-database/vehicle-query-service.ts`: в `searchCombinedVehicles` поддержаны односимвольные числовые токены (для `BYD Atto 3`, `BMW 3`, `Mazda 3`), транслит-варианты (`дж -> j` для `Джили Монджаро`) и ранжирование точных/коротких совпадений выше длинных модификаций.
+  - `src/components/ui/searchable-combobox.tsx`: добавлена оконная пагинация по `60` записей с кнопкой «Показать ещё» и счётчиком для списков 1000+ моделей (`Mercedes-Benz`, `BMW`), плюс улучшенный клиентский фильтр и ранжирование.
+  - `src/lib/server/catalog-types.ts`, `src/app/api/catalog/route.ts`, `src/lib/server/catalog-repository.ts`: добавлен параметр `fitmentOnly` (по умолчанию `false`); выбор автомобиля больше не скрывает весь каталог; при `fitmentOnly=true` отбираются строго `CONFIRMED` записи (`ProductFitment` / `Product.applicability` без случайного совпадения по текстовому описанию).
+  - `src/components/catalog/dual-mode-vehicle-filter.tsx`, `src/components/catalog/catalog-cart-drawer.tsx`, `src/app/catalog/page.tsx`: добавлены сохранение выбранного авто и состояния переключателя в `localStorage`, компактный блок `ВЫБРАННЫЙ АВТОМОБИЛЬ` с переключателем «Только запчасти, подходящие моему автомобилю», точная передача `yearSemantics` (без подмены `REGISTRATION_YEAR` на `PRODUCTION_YEAR`), предзаполнение авто в форме заявки и корзине, а также восстановление ассортимента из пустого состояния.
+  - `scripts/qa-final-catalog-ux.mjs`: создан и выполнен сквозной API + Chrome CDP сценарий проверки всех требований.
+
+- **Результаты проверок:**
+  - `npx tsc --noEmit` и `npx next build`: 0 ошибок (все 73 маршрута).
+  - `scripts/qa-final-catalog-ux.mjs` на `http://127.0.0.1:3000`:
+    - Все 12 поисковых запросов (`BMW`, `БМВ`, `Mercedes-Benz`, `Мерседес`, `BMW X5`, `Toyota Camry`, `Тойота Камри`, `BYD Atto 3`, `Geely Monjaro`, `Джили Монджаро`, `Lada Vesta`, `Лада Веста`) вернули ожидаемую модель №1 в выдаче.
+    - Подтверждено наличие всех 4 семантик года (`REGISTRATION_YEAR`, `PRODUCTION_YEAR`, `MODEL_YEAR`, `CATALOG_YEAR`); интерфейс отображает `год регистрации` для `BYD Atto 3` без подмены.
+    - Пагинация `Mercedes-Benz` (1587 моделей): рендерится 60 опций с заголовком счётчика и кнопкой «Показать ещё».
+    - Переключатель выключен по умолчанию (7 товаров видимы при выборе `BYD Atto 3`), сохранение выбранного авто в `localStorage` переживает reload; при включении `fitmentOnly` для `BYD Atto 3` выводится пустое состояние `CONFIRMED` с кнопками «Показать весь каталог» / «Оставить заявку», а для `Kia Sportage` — 4 подтверждённые позиции.
+    - Мобильный экран `390×844`: `overflow=false`, 0 ошибок в консоли.
+  - Статус: **`DONE`** (локальный сервер работает на `http://localhost:3000/catalog`; для обновления `https://zaptut-staging.netlify.app` требуется разрешение на `git add`/`commit`/`push`).
+
+## 2026-11-10 — ZAPTUT.PRO — VEHICLE DATABASE EXPANSION & CATALOG COVERAGE (DONE)
+
+- **Задача:**
+  1. Значительно расширить ZAPTUT Vehicle Database (с 51 марки / 80 моделей) на базе открытых источников `VehiclesDB` (`CC BY 4.0`) и `MeterApp/vehicle-db` (`ISC` + проверенные государственные реестры), исключив мотоциклы, автобусы и тяжёлую технику из легкового/LCV селектора.
+  2. Проверить допустимость коммерческого использования каждого источника, добавить атрибуцию `CC BY 4.0` (`VehiclesDB`) и входящих реестров, сохранить семантику годов (`MODEL_YEAR`, `PRODUCTION_YEAR`, `REGISTRATION_YEAR`, `CATALOG_YEAR`) и происхождение каждой записи (`VehicleSourceRecord`).
+  3. Обеспечить 100% покрытие контрольного набора РФ/РБ/Польша/Китай/Европа/Япония/Корея и корректную работу всех селекторов (`/catalog`, `VehicleCascadingSelector` в ZAPTUT GARAGE) для моделей с поколениями и без поколений.
+
+- **Изученные и изменённые файлы:**
+  - `data/vehicle-snapshots/vehiclesdb-snapshot.json` (2.24 МБ, 397 марок / 6 831 моделей `car` + `van` из `vehiclesdb/vehiclesdb` `v2026.11.4`), `data/vehicle-snapshots/meterapp-snapshot.json` (6.02 МБ, 662 марки / 25 184 очищенных записей из `MeterApp/vehicle-db` `v2.42.0`), `data/vehicle-snapshots/ATTRIBUTION.md`: локальные снимки данных и лицензии. Проверена коммерческая применимость всех 23 источников `MeterApp` (NHTSA/RDW/SENATRAN Public Domain, UK OGL v3.0, NZTA/JPJ/EEA CO2 CC BY 4.0, каталоги производителей — ни один источник не содержит запрета `NonCommercial`).
+  - `prisma/schema.prisma` и миграция `prisma/migrations/20261110120000_vehicle_year_semantics_and_metadata/migration.sql`: аддитивные колонки `popularityScore`, `yearSemantics`, `bodyTypes` в `VehicleMake` / `VehicleModel` / `VehicleGeneration`, применены к Neon staging без потери данных.
+  - `src/lib/server/vehicle-database/verified-regional-extra.ts` и `sources.ts`: словарь русских локализаций для 60+ мировых марок и 7 подтверждённых официальными спецификациями моделей (`Exeed TXL/VX/RX`, `Geely Tugella`, `Li Auto L6/L7`, `Zeekr 007`).
+  - `src/lib/server/vehicle-database/expanded-import.ts`, `vehicle-importer.ts` и `scripts/import-expanded-vehicles.mjs`: единый пакетный идемпотентный импорт (приоритеты: `zaptut-regional` → `vehiclesdb` → `meterapp`) с фильтрацией тяжёлых грузовиков/автобусов/мото, дедупликацией и сохранением существующих ID.
+  - `src/lib/server/vehicle-database/vehicle-query-service.ts` и `src/app/api/customer/vehicle-catalog/route.ts`: сняты ограничения `limit: 100`/`150` (до `600` марок и `2000` моделей), включена фильтрация легковых и LCV категорий, добавлен fallback `listModelLevelOptions(modelId)` для моделей без поколений.
+  - `src/components/catalog/dual-mode-vehicle-filter.tsx`, `src/components/garage/vehicle-cascading-selector.tsx`, `src/app/about/page.tsx`: поддержан выбор года (с подписью семантики) и кузова для моделей без поколений, снята блокировка сохранения таких авто в гараже, добавлена публичная атрибуция `VehiclesDB (CC BY 4.0)` и источников на `/about#vehicle-data` и под фильтром каталога.
+
+- **Результаты проверок:**
+  - Заливка в Neon staging PostgreSQL (`scripts/import-expanded-vehicles.mjs`): **398 марок**, **16 241 модель**, **40 поколений**, **20 414 алиасов**, **16 676 записей происхождения (`VehicleSourceRecord`)**, 0 не-легковых/LCV марок.
+  - `scripts/verify-vehicle-db-expansion.mjs`: **24 из 24 марок** контрольного списка (Китай, Европа, Япония, Корея, Россия) — **`Checklist missing count: 0`**.
+  - `npx tsc --noEmit` и `npx next build`: 0 ошибок (все 73 маршрута).
+  - Chrome CDP + Live API QA (`scripts/qa-expanded-vehicles.mjs` на `http://127.0.0.1:3000`): пройдены все проверки (API 398 марок, BMW 1041, Mercedes 1587, BYD 51, Geely 20, Exeed 3, GAZ 9, fallback `BYD -> Atto 3` с `REGISTRATION_YEAR`, атрибуция CC BY 4.0, 0 ошибок в консоли Chrome), сохранён скриншот `qa-vehicle-expanded-desktop.png`.
+  - Статус: **`DONE`** (локальный сервер запущен на `http://localhost:3000`; БД Neon staging обновлена; для публикации кода на `https://zaptut-staging.netlify.app` требуется разрешение на `git commit` и `git push`).
+
+## 2026-11-10 — ZAPTUT.PRO — DUAL-MODE VEHICLE SELECTOR (DONE)
+
+- **Задача:**
+  1. Реализовать в фильтрах публичного каталога (`/catalog`) комбинированный Searchable Dropdown / Combobox для выбора автомобиля с двумя равноправными способами работы: выбор из полного раскрывающегося списка и ручной ввод текста.
+  2. Поддержать все 7 зависимых уровней (`Марка`, `Модель`, `Поколение`, `Год выпуска`, `Кузов`, `Двигатель`, `Модификация`), загрузку всех марок и моделей из ZAPTUT Vehicle Database без ограничения по `ProductFitment`, поиск на русском и английском языках, транслитерацию, `VehicleAlias` и составные запросы (`Toyota Camry`, `Тойота Камри`, `Kia Sportage`, `Киа Спортейдж`, `Lada Vesta`, `Лада Веста`, `BMW`, `БМВ`).
+  3. Наполнить Neon PostgreSQL staging (`br-muddy-mouse-bdg3o06x`) справочником ZAPTUT Vehicle Database и проверить оба режима работы на desktop (`1440×900`) и mobile (`390×844`).
+
+- **Изученные и изменённые файлы:**
+  - `scripts/fast-seed-vehicles.mjs`: создан быстрый пакетный сидер на `createMany({ skipDuplicates: true })` для удалённой Neon staging БД (устранён таймаут pooler `P1001` построчного импортера). Загружено: 51 марка, 80 моделей, 33 поколения, 226 годов выпуска, 28 двигателей, 27 модификаций, 566 алиасов `VehicleAlias`.
+  - `src/lib/server/vehicle-database/vehicle-query-service.ts`: добавлена поддержка `VehicleAlias` в `listMakes`/`listModels`, транслитерация RU->LAT (`translitRuToLat`) и метод `searchCombinedVehicles` для составных запросов «Марка + Модель».
+  - `src/app/api/customer/vehicle-catalog/route.ts`: добавлен `step=combined` для быстрого поиска связки «Марка + Модель».
+  - `src/lib/server/catalog-repository.ts`: фильтрация каталога по выбранному авто приведена к реальному сопоставлению по `Product.applicability` (JSON), `ProductFitment` и текстовым полям без создания фиктивной применимости.
+  - `src/components/ui/searchable-combobox.tsx`: создан доступный компонент `SearchableCombobox` (`role="combobox"`, `role="listbox"`, навигация `ArrowDown`/`ArrowUp`/`Enter`/`Escape`, кнопка сброса `×`, стрелка раскрытия списка, состояния загрузки/ошибки/пустого списка, блок быстрого выбора `quick-pick`).
+  - `src/components/catalog/dual-mode-vehicle-filter.tsx`: создан 7-уровневый каскадный фильтр `DualModeVehicleFilter` со сбросом зависимых полей при изменении родительского значения.
+  - `src/app/catalog/page.tsx`: интегрирован `<DualModeVehicleFilter />` в боковую панель фильтров каталога.
+  - `scripts/qa-dual-vehicle-selector.mjs`: создан и выполнен сквозной API + Chrome CDP QA-сценарий.
+
+- **Результаты проверок:**
+  - `npx tsc --noEmit`: 0 ошибок.
+  - `npm run build`: успешная сборка всех 73 маршрутов Next.js.
+  - API-проверки (8 из 8 запросов пройдены: `BMW`, `БМВ`, `Toyota Camry`, `Тойота Камри`, `Kia Sportage`, `Киа Спортейдж`, `Lada Vesta`, `Лада Веста`, полный список 51 марки).
+  - Chrome CDP QA (`scripts/qa-dual-vehicle-selector.mjs`, `127.0.0.1:3005`): 0 ошибок на desktop (`1440×900`) и mobile (`390×844`), `overflow=false`. Проверены раскрытие списка без ввода текста (51 марка, 8 моделей Kia), каскадный выбор `Kia -> Sportage -> IV (QL) Рестайлинг`, ручной ввод `"Тойота Камри"` с автоподстановкой `Make="Toyota"`, `Model="Camry"`. Сохранены скриншоты обоих режимов и мобильного вида.
+  - Статус: **`DONE`** (для обновления публичного `https://zaptut-staging.netlify.app` требуется разрешение пользователя на `git commit` и `git push`).
+
+## 2026-11-10 — ZAPTUT.PRO — FINAL VISUAL & UX POLISH (DONE)
+
+- **Задача:**
+  1. Привести публичные экраны, каталог, личный кабинет, CRM и портал поставщика к единой арт-дирекции (Graphite `#17191B`, Signal Orange `#FF6428`, Industrial Steel `#888B8D`, Warm Porcelain `#F1F0EB`, шрифт Onest).
+  2. Устранить визуальные и адаптивные дефекты по итогам браузерного аудита в Chrome CDP на разрешениях 1440×900, 768×1024, 390×844, 375×812.
+
+- **Исправленные ошибки и доработки:**
+  - `src/components/ui/icons.tsx`: создана единая система монохромных SVG-иконок (`strokeWidth="1.75"`), заменившая цветные системные emoji в шапке сайта, каталоге, личном кабинете, ZAPTUT GARAGE, CRM и портале поставщика.
+  - `src/app/globals.css`: настроены тёмные скроллбары и адаптивные боковые поля `.container` на узких мобильных экранах (375–390px).
+  - `src/app/page.tsx`: исправлено обрезание кнопки гамбургер-меню на мобильном экране (`375px` и `390px`), выровнена высота кнопок шапки (`min-h-10`), расширен футер ссылками на все разделы платформы и юридические страницы.
+  - `src/app/catalog/page.tsx`: убран избыточный бейдж «Каталог» с фотографий карточек товаров, статусные бейджи локализованы на русский («ОРИГИНАЛ», «АНАЛОГ», «Б/У», «АРХИВ · ПРОДАНО»), баннер демо-стенда приведён к сдержанному виду.
+  - `src/components/auth/login-form.tsx`: удалён случайный декоративный квадрат в левой панели, пересекавший текст; добавлены SVG-иконки для переключателя видимости пароля.
+  - `src/app/admin/admin-client-page.tsx`: исправлен выход бейджа «ПРЕДЛОЖЕНИЕ СФОРМИРОВАНО» за пределы колонки таблицы заявок (наезд на соседнюю колонку), устранено обрезание заголовков карточек KPI на мобильном («ЖДУТ ОТВЕТА ПОКУПА…» / «ПОДТВЕРЖДЁННЫЕ ЗА…»), выровнена сетка финансовой сводки, убран технический жаргон (`POSTGRESQL`, `Источник истины`, захардкоженная дата `06 ноября 2026`).
+  - `src/components/admin/order-register.tsx`: добавлен адаптивный карточный список заказов для мобильных и планшетов (`lg:hidden`) вместо обрезающейся горизонтальной таблицы.
+  - `src/app/supplier/supplier-client-page.tsx`: добавлена мобильная панель навигации (`lg:hidden`) для переключения разделов портала поставщика на телефонах и планшетах; заменены системные emoji на SVG-иконки.
+  - `src/app/account/(portal)/notifications/page.tsx` и `src/components/customer/customer-nav.tsx`: заменены emoji на SVG-иконки, переведён заголовок на русский («ЛИЧНЫЙ КАБИНЕТ · УВЕДОМЛЕНИЯ»).
+
+- **Результаты проверок:**
+  - `npx tsc --noEmit`: 0 ошибок.
+  - `npm run build`: успешная сборка всех 73 маршрутов Next.js.
+  - Chrome CDP QA (`scripts/qa-after-polish.mjs`): `overflow=false` на всех 13 проверках (`1440×900`, `768×1024`, `390×844`, `375×812`), `brokenImages=0`, `Runtime errors: 0`. Сохранены скриншоты «до» и «после».
+  - Статус: **`DONE`** (требуется разрешение пользователя на `git commit` / `git push` для выката правок на публичный staging Netlify).
+
+## 2026-11-09 — ZAPTUT.PRO — COMMERCIAL LAUNCH READINESS COMPLETE (DONE)
+
+- **Задача:**
+  1. Каталог и поиск (Этап 1): доведение поиска до профессионального уровня (нормализация артикулов/OEM, очистка от спецсимволов, транслитерация кириллицы/латиницы и брендов, приоритетное ранжирование: точный OEM -> точный артикул -> бренд/название -> частичные совпадения). Расширенные фильтры (диапазон цен, сортировка), карточка товара, бейдж демонстрационного режима Staging Preview.
+  2. Уведомления и коммуникации (Этап 2): архитектура `Notification` в Prisma и Neon PostgreSQL, сервисный слой `notificationService` с идемпотентностью (`eventKey`). Центр уведомлений покупателя `/account/notifications` со счетчиком непрочитанных, вкладками фильтрации и переходом к связанным заявкам/заказам. Интеграция триггеров на создание заявки, готовность предложения, принятие предложения, выставление оплаты и назначение доставки. API `/api/customer/notifications` и `/api/admin/notifications`.
+  3. Оплата и доставка (Этап 3): честный ручной сценарий оплаты без выдуманных реквизитов (менеджер выставляет сумму, покупатель отправляет уведомление об оплате с комментарием через `/api/customer/orders/[id]/payment-report`, статус `PAID` подтверждает только уполномоченный сотрудник). Доставка: указание перевозчика (СДЭК, Деловые Линии, Почта России), трек-номера и прямых кликабельных ссылок отслеживания на сайтах служб доставки. Модульные адаптеры `PaymentProvider` (Manual / YooKassa) и `DeliveryProvider` (Manual / CDEK v2).
+  4. Подготовка к коммерческому запуску (Этап 4): разделение SEO (Staging: `noindex, nofollow`, блокирующий `robots.ts`; Production: `sitemap.ts`, Open Graph, `robots.ts` с открытием публичных страниц и закрытием кабинетов/CRM). 8 юридических и справочных страниц с шаблонами для юриста: `/about`, `/contacts`, `/payment-info`, `/delivery-info`, `/returns-warranty`, `/privacy-policy`, `/terms`, `/consent`. Внутренняя аналитика `/api/admin/analytics`. Автоматизированный скрипт бэкапа `scripts/backup-database.mjs` и регламент `docs/BACKUP-AND-RESTORE-PROCEDURE.md`. Защитные security headers в `next.config.mjs`.
+  5. Сквозное тестирование (Этап 5): успешный прогон 22-шагового end-to-end сценария и живая верификация API на Netlify (`12 PASSED, 0 FAILED`).
+
+- **Изученные и изменённые файлы:**
+  - `src/lib/server/catalog-search-normalizer.ts`: утилита анализа, транслитерации и скоринга релевантности.
+  - `src/lib/server/catalog-types.ts`, `src/lib/server/catalog-repository.ts`, `src/lib/server/catalog-service.ts`, `src/app/api/catalog/route.ts`: поддержка сортировки, диапазонов цен и приоритетного ранжирования.
+  - `src/app/catalog/page.tsx`: бейдж бета-тестирования, фильтры цен, сортировка, кнопка сброса, empty state.
+  - `prisma/schema.prisma`: модель `Notification` с индексами и связями с `User` и `Customer`.
+  - `src/lib/server/notification-service.ts`: единый сервис нотификаций покупателей и менеджеров.
+  - `src/app/api/customer/notifications/route.ts`, `src/app/api/customer/notifications/read/route.ts`: API клиентских уведомлений.
+  - `src/app/api/admin/notifications/route.ts`, `src/app/api/admin/notifications/read/route.ts`: API служебных уведомлений CRM.
+  - `src/app/account/(portal)/notifications/page.tsx`: UI центра уведомлений покупателя.
+  - `src/components/customer/customer-nav.tsx`: бейдж и ссылка на уведомления в навигации кабинета.
+  - `src/app/api/customer/orders/[id]/payment-report/route.ts`: клиентский репорт об оплате без права менять статус на `PAID`.
+  - `src/app/account/(portal)/orders/[id]/page.tsx`: блок инструкции по оплате, форма подтверждения и кликабельный трекинг доставки.
+  - `src/lib/server/payment/payment-provider.ts`: интерфейс и адаптеры `PaymentProvider` (`ManualPaymentAdapter`, `YooKassaPaymentAdapter`).
+  - `src/lib/server/delivery/delivery-provider.ts`: интерфейс и адаптеры `DeliveryProvider` (`ManualDeliveryAdapter`, `CdekDeliveryAdapter`).
+  - `src/app/robots.ts`, `src/app/sitemap.ts`, `src/app/layout.tsx`: окружениезависимое SEO (noindex на staging).
+  - `src/components/layout/legal-page-layout.tsx` + 8 страниц: `/about`, `/contacts`, `/payment-info`, `/delivery-info`, `/returns-warranty`, `/privacy-policy`, `/terms`, `/consent`.
+  - `src/app/api/admin/analytics/route.ts`: защищенная серверная аналитика конверсий и показателей.
+  - `scripts/backup-database.mjs`, `docs/BACKUP-AND-RESTORE-PROCEDURE.md`: автономный бэкап PostgreSQL и регламент.
+  - `next.config.mjs`: security headers (X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy).
+  - `scripts/verify-commercial-readiness-journey.mjs`, `scripts/test-commercial-readiness-live.mjs`: сценарии сквозной верификации.
+
+- **Результаты проверок:**
+  - `npm run build`: успешная компиляция Next.js и генерация всех 57+ статических и динамических маршрутов.
+  - `test-commercial-readiness-live.mjs`: 12/12 проверок успешно пройдены на живом staging сервере (`https://zaptut-staging.netlify.app`).
+  - Автономный бэкап: проверен выгрузкой 18 таблиц из удаленной Neon staging БД (`backup-zaptut-staging-*.json`, 66.0 КБ).
+  - Статус: **`DONE`**.
+
+## 2026-11-09 — ZAPTUT.PRO — LIVE STAGING ON NETLIFY & NEON POSTGRES COMPLETE (DONE)
+
+- **Задача:**
+  1. Устранить причину блокировки сборщика Netlify (CVE-2025-55182 в устаревшей версии Next.js 15.5.6) — повысить Next.js до безопасной версии `15.5.29`.
+  2. Зафиксировать среду сборки: Node.js 24 (`.nvmrc`, `netlify.toml`, Netlify env vars).
+  3. Исправить пути генерации схемы Prisma (`--schema=./prisma/schema.prisma`).
+  4. Зафиксировать и отправить все изменения в приватный GitHub репозиторий `archesnew/autoparts-platform` (ветка `main`).
+  5. Развернуть боевой deployment на Netlify с подключением Next.js Runtime (AWS Lambda serverless handler).
+  6. Провести живую проверку авторизации и работы CRM в интернете.
+
+- **Изученные и изменённые файлы:**
+  - `package.json` и `package-lock.json`: обновлен `next` до `15.5.29`, `eslint-config-next` до `15.5.29`.
+  - `.nvmrc`: строго зафиксирована версия `24`.
+  - `netlify.toml`: зафиксирован `NODE_VERSION = "24"` и явный путь `--schema=./prisma/schema.prisma`.
+  - GitHub: отправлены коммиты `f54793d` и `f1e1d71`.
+
+- **Результаты проверки:**
+  - Деплой Netlify: `6af1ff00ac420506ec8c5247` — статус **`ready`**.
+  - Serverless functions: развернута функция `Next.js Server Handler` (`___netlify-server-handler`) на runtime `nodejs24.x`.
+  - Главная страница (`https://zaptut-staging.netlify.app/`): **`200 OK`**.
+  - Каталог (`https://zaptut-staging.netlify.app/catalog`): **`200 OK`**.
+  - Экран входа (`https://zaptut-staging.netlify.app/login`): **`200 OK`**.
+  - Авторизация партнера (`demo.partner@zaptut.pro`): **`200 OK`**, сессионные куки выданы, роль `DEMO_VIEWER`.
+  - Запросы CRM через API (`/api/requests`): **`200 OK`**, возвращены все 5 заявок из облачной БД Neon staging (`cool-bread-02284827`).
+  - Авторизация владельца (`owner@zaptut.pro`): **`200 OK`**, роль `SUPER_ADMIN`.
+  - Статус: **`DONE`**.
+
 ## 2026-11-09 — ZAPTUT.PRO — CLOUD NEON POSTGRES STAGING & ARCHIVE PREPARATION
 
 - **Задача:**
@@ -1107,3 +1349,35 @@
 - **Git:** до изменений рабочее дерево целиком показывалось как untracked; чужие файлы не очищались и не индексировались. Commit/push не выполнялись.
 - **Статус:** PARTIAL — единый бренд реализован и большая часть визуального QA пройдена; остаются перечисленные browser checks.
 
+
+
+## 2026-11-11 — ZAPTUT.PRO — SECURITY REMEDIATION PHASE 1
+
+- **Задача:** Устранить критические и high/priority-1 уязвимости безопасности (`P0.1`–`P0.6`, `P1.7`–`P1.10`) по отчёту независимого аудита от 09.11.2026 без изменения финансовых формул, бизнес-логики CRM, каталога/селектора авто и без сброса/изменения паролей существующих аккаунтов `SUPER_ADMIN` и `DEMO_VIEWER`.
+- **Изученные файлы:** `AGENTS.md`, `docs/PROJECT-STATE.md`, `docs/AI-LOG.md`, `docs/AI-HANDOFF.md`, `package.json`, `next.config.mjs`, `netlify.toml`, `.nvmrc`, `prisma/schema.prisma`, `src/lib/server/customer-portal-service.ts`, `src/lib/server/customer-session.ts`, `src/lib/server/customer-phone-auth-service.ts`, `src/lib/server/sms/sms-service.ts`, `src/lib/server/sms/mock-provider.ts`, `src/lib/server/import/feed-parser.ts`, `src/lib/server/import/import-service.ts`, `src/lib/server/staff-rbac.ts`, `src/app/api/customer/auth/**`, `src/components/customer/phone-auth-form.tsx`, `src/app/account/(auth)/forgot-password/page.tsx`, `scripts/*.mjs`, `src/lib/server/*.db-test.mjs`.
+- **Изменённые и добавленные файлы:**
+  - `prisma/schema.prisma`, `prisma/migrations/20261110150000_security_rate_limit_buckets/migration.sql`: модель и таблица `rate_limit_buckets` (применена на Neon staging).
+  - `src/lib/server/security/rate-limiter.ts`: атомарный PostgreSQL rate limiter (`INSERT ... ON CONFLICT ... RETURNING`) и доверенный парсер IP (`extractTrustedClientIp`).
+  - `src/lib/server/customer-portal-service.ts`, `src/app/api/customer/auth/forgot-password/route.ts`, `src/app/account/(auth)/forgot-password/page.tsx`, `src/lib/server/customer-session.ts`: убрана утечка reset-токена/URL; публичный сброс ограничен только ролью `CUSTOMER`; SHA-256 токены со сроком 15 мин; отключено связывание по неподтверждённому email и write side-effects на GET `getCustomerContext`; запрещена скрытая смена email в `updateProfile`.
+  - `src/lib/server/sms/sms-service.ts`, `src/lib/server/customer-phone-auth-service.ts`, `src/app/api/customer/auth/phone/send-otp/route.ts`, `src/components/customer/phone-auth-form.tsx`: удалён обход `"111111"` и выдача `devOtpCode`; добавлен server-only test OTP allowlist (`PHONE_AUTH_TEST_PHONES`, `PHONE_AUTH_TEST_OTP_CODE`); SHA-256 OTP (`timingSafeEqual`), транзакционная блокировка `SELECT ... FROM verifications ... FOR UPDATE` (`maxWait`/`timeout` = 15 с), PostgreSQL лимиты + global anti-pumping circuit breaker (`60/мин`), безопасный `changePhone` (в т.ч. проверка конфликта с `userId: null`).
+  - `package.json`, `src/lib/server/import/feed-parser.ts`, `src/lib/server/import/import-service.ts`, `src/lib/server/import-service.db-test.mjs`: удалён `xlsx`, установлен `exceljs@4.4.0`, асинхронный `parseXlsx`/`parseFeedBuffer` без вычисления формул, добавлен `"engines": { "node": ">=24" }`.
+  - `next.config.mjs`: убраны `eslint.ignoreDuringBuilds` и `typescript.ignoreBuildErrors`; настроены `Content-Security-Policy` (без `'unsafe-eval'`), `Strict-Transport-Security` (production), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`.
+  - `scripts/*.mjs` (19 скриптов, включая `seed-staging-demo-crm.mjs`, `test-real-supplier-onboarding.mjs`, `qa-*.mjs`, `test-*.mjs`): удалены захардкоженные пароли, служебные email и `"111111"`/`devOtpCode` (заменены на env-переменные или эфемерный `crypto.randomBytes`/`randomUUID`, `test-real-supplier-onboarding.mjs` переведён на `exceljs` + `await parseFeedBuffer`).
+  - `src/lib/server/customer-phone-auth.db-test.mjs`, `src/lib/server/customer-portal.db-test.mjs`, `src/lib/server/security-remediation.db-test.mjs`: обновлены существующие тесты и добавлен регрессионный набор из 14 обязательных сценариев.
+- **Результаты тестов и проверок:**
+  - `npx tsc --noEmit`: exit 0.
+  - `npm run lint` (`eslint .`): exit 0.
+  - `npm run build` (`prisma generate && next build`, 73 маршрута): exit 0.
+  - `npm run test:finance`: 19/19 pass.
+  - `npm run test:auth`: 7/7 pass.
+  - `npm run test:customers`: 24/24 pass.
+  - `npm run test:server`: 18/18 pass.
+  - `npm run test:portal`: 9/9 pass.
+  - `customer-phone-auth.db-test.mjs` + `import-service.db-test.mjs` + `security-remediation.db-test.mjs`: 27/27 pass (8/8 + 3/3 + 14/14 регрессионных + 2 заголовка сьютов).
+  - `npm audit --omit=dev --json`: 0 critical; `xlsx` удалён; в production-зависимостях остаются только транзитивные/major предупреждения (`prisma`/`deepmerge-ts` -> Prisma 7, `sharp`, `exceljs`/`uuid <11.1.1`, build-time `postcss` в Next).
+  - Production server (`npx next start -p 3010`) + headless Chrome CDP: все 6 HTTP security headers подтверждены, 0 CSP-нарушений и 0 runtime/console ошибок на `/`, `/catalog`, `/account/login`, `/login`, `/account/forgot-password`.
+  - Не выполнены: `npm run test:orders` и `npm run test:staff` (блокированы guard-проверкой скриптов против запуска вне локальной БД `zaptut_dev`). Git `commit`/`push` не выполнялись.
+- **Оставшиеся проблемы / действия владельца:**
+  - Требуется отдельная ротация владельцем ранее засвеченных в репозитории и архиве аудита от 09.11.2026 учётных записей (`owner@zaptut.pro`, `admin@zaptut.pro`, `demo.partner@zaptut.pro`, `mr.artursabirov@gmail.com`).
+  - Изменения находятся в локальном рабочем дереве (ожидают разрешения на `git commit` / `git push` для выкладки на `https://zaptut-staging.netlify.app`).
+- **Статус:** DONE.

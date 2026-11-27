@@ -98,6 +98,34 @@ export default function CustomerOrderDetailPage({
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
+  const [paymentComment, setPaymentComment] = useState("");
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentSubmittedMsg, setPaymentSubmittedMsg] = useState("");
+
+  async function submitPaymentReport(e: React.FormEvent) {
+    e.preventDefault();
+    if (paymentSubmitting) return;
+    setPaymentSubmitting(true);
+    try {
+      const res = await fetch(`/api/customer/orders/${id}/payment-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment: paymentComment }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPaymentSubmittedMsg(data.message || "Сообщение об оплате отправлено менеджеру");
+        setPaymentComment("");
+        loadOrder();
+      } else {
+        alert(data.error || "Ошибка при отправке сообщения об оплате");
+      }
+    } catch {
+      alert("Ошибка сети при отправке сообщения");
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  }
 
   async function loadOrder() {
     try {
@@ -300,6 +328,67 @@ export default function CustomerOrderDetailPage({
         </div>
       </div>
 
+      {/* Payment Instructions & Action */}
+      <div className="border border-[#383e41] bg-[#1e2124] p-5">
+        <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
+          <div>
+            <p className="text-[10px] font-extrabold uppercase tracking-widest text-[#ff6428]">
+              Оплата заказа
+            </p>
+            <h3 className="mt-1 text-base font-bold text-[#f1f0eb]">
+              {order.paymentStatus === "PAID"
+                ? "Заказ оплачен"
+                : "Инструкция по оплате"}
+            </h3>
+          </div>
+          <span className={`inline-block border px-2.5 py-1 text-xs font-bold uppercase tracking-wider ${paymentConfig.badgeClass}`}>
+            {paymentConfig.label}
+          </span>
+        </div>
+
+        {order.paymentStatus === "PAID" ? (
+          <div className="mt-4 border border-emerald-900/50 bg-emerald-950/20 p-4 text-xs text-emerald-300">
+            ✓ Оплата по заказу успешно подтверждена менеджером. Заказ передан в комплектацию и доставку.
+          </div>
+        ) : (
+          <div className="mt-4 space-y-4 text-xs">
+            <div className="border border-[#383e41] bg-[#17191b] p-4 leading-6 text-[#cbd0d1]">
+              <p className="font-bold text-[#f1f0eb]">Сумма к оплате: <span className="text-[#ff6428] text-base">{order.grandTotalFormatted}</span></p>
+              <p className="mt-2 text-[#aeb5b6]">
+                Оплата производится прямым банковским переводом по выставленному согласованию с вашим персональным менеджером ZAPTUT.PRO. После осуществления перевода отправьте подтверждение ниже, чтобы менеджер сверил выписку и подтвердил зачисление.
+              </p>
+            </div>
+
+            {paymentSubmittedMsg ? (
+              <div className="border border-sky-800 bg-sky-950/30 p-4 text-xs text-sky-300">
+                ✓ {paymentSubmittedMsg}
+              </div>
+            ) : (
+              <form onSubmit={submitPaymentReport} className="space-y-3">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#888b8d]">
+                  Сообщение об оплате для менеджера
+                  <input
+                    type="text"
+                    required
+                    placeholder="Например: Оплачено через СБП 15:40 / Иванов И.И."
+                    value={paymentComment}
+                    onChange={(e) => setPaymentComment(e.target.value)}
+                    className="mt-1.5 w-full border border-[#414749] bg-[#17191b] px-3 py-2.5 text-xs text-[#f1f0eb] outline-none focus:border-[#ff6428]"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={paymentSubmitting}
+                  className="bg-[#ff6428] px-5 py-2.5 text-xs font-extrabold uppercase tracking-wider text-[#17191b] transition hover:bg-[#ff8050] disabled:opacity-50"
+                >
+                  {paymentSubmitting ? "Отправка..." : "Сообщить об оплате →"}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Shipment & Delivery Details */}
       {primaryShipment && (
         <div className="border border-[#383e41] bg-[#1e2124] p-5">
@@ -320,6 +409,22 @@ export default function CustomerOrderDetailPage({
               <p className="mt-1 font-mono font-bold text-[#ff865c]">
                 {primaryShipment.trackingNumber || "Будет присвоен после передачи в доставку"}
               </p>
+              {primaryShipment.trackingNumber && (
+                <a
+                  href={
+                    primaryShipment.carrier?.toLowerCase().includes("почта")
+                      ? `https://www.pochta.ru/tracking#${encodeURIComponent(primaryShipment.trackingNumber)}`
+                      : primaryShipment.carrier?.toLowerCase().includes("деловые")
+                      ? `https://www.dellin.ru/tracker/?rw=${encodeURIComponent(primaryShipment.trackingNumber)}`
+                      : `https://www.cdek.ru/ru/tracking?order_id=${encodeURIComponent(primaryShipment.trackingNumber)}`
+                  }
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1.5 inline-block text-[11px] font-bold text-[#ff6428] hover:underline"
+                >
+                  Отследить отправление на сайте службы ↗
+                </a>
+              )}
             </div>
             <div>
               <span className="text-[10px] font-bold uppercase tracking-wider text-[#888b8d]">

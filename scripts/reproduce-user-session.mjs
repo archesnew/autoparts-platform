@@ -64,6 +64,12 @@ async function main() {
     await send("Page.navigate", { url: "http://localhost:3000/login" });
     await new Promise(r => setTimeout(r, 2000));
 
+    const adminEmail = process.env.ZAPTUT_ADMIN_EMAIL?.trim();
+    const adminPassword = process.env.ZAPTUT_ADMIN_PASSWORD;
+    if (!adminEmail || !adminPassword) {
+      throw new Error("Set ZAPTUT_ADMIN_EMAIL and ZAPTUT_ADMIN_PASSWORD in environment.");
+    }
+
     console.log("2. Filling login form...");
     await send("Runtime.evaluate", {
       expression: `(() => {
@@ -78,8 +84,8 @@ async function main() {
         };
 
         if (emailInput && passInput && submitBtn) {
-          setVal(emailInput, 'mr.artursabirov@gmail.com');
-          setVal(passInput, 'Duraki88!Duraki88!');
+          setVal(emailInput, ${JSON.stringify(adminEmail)});
+          setVal(passInput, ${JSON.stringify(adminPassword)});
           submitBtn.click();
           return true;
         }

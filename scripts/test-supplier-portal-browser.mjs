@@ -90,8 +90,14 @@ async function main() {
   });
   if (!supplier) throw new Error("Supplier 'Север Авто Деталь' not found in DB");
 
+  const adminEmail = process.env.ZAPTUT_ADMIN_EMAIL?.trim();
+  const adminPassword = process.env.ZAPTUT_ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    throw new Error("Set ZAPTUT_ADMIN_EMAIL and ZAPTUT_ADMIN_PASSWORD in environment.");
+  }
+
   const repEmail = "rep.sever@example.test";
-  const repPassword = "SupplierPass123!";
+  const repPassword = randomUUID() + "!Qa1";
 
   // Delete existing test user if present
   const existingUser = await prisma.user.findUnique({ where: { email: repEmail } });
@@ -193,8 +199,8 @@ async function main() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: "mr.artursabirov@gmail.com",
-          password: "Duraki88!Duraki88!"
+          email: ${JSON.stringify(adminEmail)},
+          password: ${JSON.stringify(adminPassword)}
         }),
       });
       return { ok: res.ok, status: res.status };

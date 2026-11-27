@@ -29,6 +29,7 @@ type Props = {
   onUpdateQuantity: (id: string, delta: number) => void;
   onRemoveItem: (id: string) => void;
   onClearCart: () => void;
+  defaultVehicle?: { make?: string; model?: string; year?: string };
 };
 
 export function CatalogCartDrawer({
@@ -38,6 +39,7 @@ export function CatalogCartDrawer({
   onUpdateQuantity,
   onRemoveItem,
   onClearCart,
+  defaultVehicle,
 }: Props) {
   const router = useRouter();
 
@@ -57,6 +59,12 @@ export function CatalogCartDrawer({
   // Check customer session and load garage vehicles on open
   useEffect(() => {
     if (!isOpen) return;
+
+    if (defaultVehicle?.make && !manualMake) {
+      setManualMake(defaultVehicle.make);
+      if (defaultVehicle.model && !manualModel) setManualModel(defaultVehicle.model);
+      if (defaultVehicle.year && !manualYear) setManualYear(defaultVehicle.year);
+    }
 
     fetch("/api/customer/profile")
       .then((res) => (res.ok ? res.json() : null))
@@ -393,15 +401,36 @@ export function CatalogCartDrawer({
         {!createdRequest && items.length > 0 && (
           <div className="border-t border-[#383e41] bg-[#17191b] p-5">
             {customer ? (
-              <button
-                id="cart-submit-btn"
-                type="button"
-                onClick={handleCheckout}
-                disabled={submitting}
-                className="w-full min-h-12 bg-[#ff6428] px-5 text-xs font-black uppercase tracking-wider text-[#17191b] transition hover:bg-[#ff7a45] disabled:opacity-50"
-              >
-                {submitting ? "Создание заявки..." : `Оформить заявку (${totalQuantity} поз.) →`}
-              </button>
+              <div className="space-y-2.5">
+                <button
+                  id="cart-submit-btn"
+                  type="button"
+                  onClick={handleCheckout}
+                  disabled={submitting}
+                  className="w-full min-h-12 bg-[#ff6428] px-5 text-xs font-black uppercase tracking-wider text-[#17191b] transition hover:bg-[#ff7a45] disabled:opacity-50"
+                >
+                  {submitting ? "Создание заявки..." : `Оформить заявку (${totalQuantity} поз.) →`}
+                </button>
+                <p className="text-center text-[10px] leading-relaxed text-[#888b8d]">
+                  Оформляя заявку, вы соглашаетесь с{" "}
+                  <Link
+                    href="/consent"
+                    target="_blank"
+                    className="text-[#f1f0eb] underline decoration-[#ff6428] underline-offset-2 transition hover:text-[#ff865c]"
+                  >
+                    условиями обработки персональных данных
+                  </Link>{" "}
+                  и{" "}
+                  <Link
+                    href="/privacy-policy"
+                    target="_blank"
+                    className="text-[#f1f0eb] underline decoration-[#ff6428] underline-offset-2 transition hover:text-[#ff865c]"
+                  >
+                    политикой конфиденциальности
+                  </Link>
+                  .
+                </p>
+              </div>
             ) : (
               <div className="space-y-2">
                 <button
@@ -412,8 +441,16 @@ export function CatalogCartDrawer({
                 >
                   Войти по телефону для оформления →
                 </button>
-                <p className="text-center text-[10px] text-[#888b8d]">
-                  Выбранные детали сохранятся в корзине при входе
+                <p className="text-center text-[10px] leading-relaxed text-[#888b8d]">
+                  Выбранные детали сохранятся в корзине при входе. Авторизуясь, вы принимаете{" "}
+                  <Link
+                    href="/consent"
+                    target="_blank"
+                    className="text-[#f1f0eb] underline decoration-[#ff6428] underline-offset-2 transition hover:text-[#ff865c]"
+                  >
+                    согласие на обработку данных
+                  </Link>
+                  .
                 </p>
               </div>
             )}

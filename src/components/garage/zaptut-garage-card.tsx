@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { VehicleSideView } from "./vehicle-side-view";
+import { IconCar } from "@/components/ui/icons";
 import {
   BODY_TYPE_LABELS,
   type BodyType,
@@ -37,8 +38,8 @@ export function ZaptutGarageCard({
     return (
       <section className="border border-[#383e41] bg-[#1e2124] p-6 sm:p-7 shadow-lg">
         <div className="flex flex-col items-center text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[#383e41] bg-[#17191b] text-xl text-[#ff6428]">
-            🚗
+          <div className="flex h-12 w-12 items-center justify-center rounded-full border border-[#383e41] bg-[#17191b] text-[#ff6428]">
+            <IconCar className="h-5 w-5" />
           </div>
           <p className="mt-2.5 text-[10px] font-bold uppercase tracking-[.2em] text-[#ff6428]">
             ZAPTUT GARAGE

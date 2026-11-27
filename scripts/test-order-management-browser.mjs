@@ -162,6 +162,12 @@ async function main() {
     console.log("Navigating to /admin...");
     await cdp.navigate("http://127.0.0.1:3000/admin");
 
+    const adminEmail = process.env.ZAPTUT_ADMIN_EMAIL?.trim();
+    const adminPassword = process.env.ZAPTUT_ADMIN_PASSWORD;
+    if (!adminEmail || !adminPassword) {
+      throw new Error("Set ZAPTUT_ADMIN_EMAIL and ZAPTUT_ADMIN_PASSWORD in environment.");
+    }
+
     console.log("Authenticating as SuperAdmin via session API...");
     const loginRes = await cdp.eval(`
       (async () => {
@@ -169,8 +175,8 @@ async function main() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            email: "mr.artursabirov@gmail.com",
-            password: "Duraki88!Duraki88!",
+            email: ${JSON.stringify(adminEmail)},
+            password: ${JSON.stringify(adminPassword)},
           }),
         });
         return { ok: res.ok, status: res.status };

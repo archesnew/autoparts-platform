@@ -181,9 +181,26 @@ export class CatalogService {
 
   async searchPublic(filters: CatalogSearchFilters): Promise<CatalogSearchResult> {
     const { products, total } = await this.repo.search(filters);
+    let items = products.map(toPublicProductDto);
+
+    if (filters.minPrice !== undefined) {
+      items = items.filter((item) => item.minPrice !== null && item.minPrice >= filters.minPrice!);
+    }
+    if (filters.maxPrice !== undefined) {
+      items = items.filter((item) => item.minPrice !== null && item.minPrice <= filters.maxPrice!);
+    }
+
+    if (filters.sortBy === "price_asc") {
+      items.sort((a, b) => (a.minPrice ?? Infinity) - (b.minPrice ?? Infinity));
+    } else if (filters.sortBy === "price_desc") {
+      items.sort((a, b) => (b.minPrice ?? -1) - (a.minPrice ?? -1));
+    } else if (filters.sortBy === "newest") {
+      items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    }
+
     return {
-      items: products.map(toPublicProductDto),
-      total,
+      items,
+      total: items.length < total && (filters.minPrice !== undefined || filters.maxPrice !== undefined) ? items.length : total,
       skip: filters.skip ?? 0,
       take: filters.take ?? 50,
     };

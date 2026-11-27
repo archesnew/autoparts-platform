@@ -24,8 +24,9 @@ export class CustomerAuthorizationError extends Error {
 }
 
 /**
- * Resolves the authenticated customer context from the session cookie / headers.
- * Ensures the user has role 'CUSTOMER' and has a linked Customer profile in PostgreSQL.
+ * Strictly read-only resolver for authenticated CUSTOMER session context.
+ * Does NOT create or auto-link Customer records as a GET side effect,
+ * and never links profiles by unverified email.
  */
 export async function getCustomerContext(incomingHeaders?: Headers): Promise<CustomerContext | null> {
   let reqHeaders: Headers;
@@ -68,54 +69,9 @@ export async function getCustomerContext(incomingHeaders?: Headers): Promise<Cus
   // Strict role verification: only CUSTOMER accounts can enter the customer portal
   if (user.role !== "CUSTOMER") return null;
 
-  // If customer record is not directly linked yet, search by phone or email or create one
-  let customer = user.customer;
-  if (!customer) {
-    const normPhone = user.phoneNumber;
-    const cleanEmail = user.email ? user.email.trim().toLowerCase() : null;
-
-    let existing = null;
-    if (normPhone) {
-      existing = await prisma.customer.findFirst({
-        where: {
-          userId: null,
-          normalizedPhone: normPhone,
-        },
-      });
-    }
-
-    if (!existing && cleanEmail) {
-      existing = await prisma.customer.findFirst({
-        where: {
-          userId: null,
-          OR: [
-            { normalizedEmail: cleanEmail },
-            { email: cleanEmail },
-          ],
-        },
-      });
-    }
-
-    if (existing) {
-      customer = await prisma.customer.update({
-        where: { id: existing.id },
-        data: { userId: user.id },
-        select: { id: true, name: true, phone: true, email: true },
-      });
-    } else {
-      customer = await prisma.customer.create({
-        data: {
-          name: user.name,
-          phone: normPhone,
-          normalizedPhone: normPhone,
-          email: cleanEmail,
-          normalizedEmail: cleanEmail,
-          userId: user.id,
-        },
-        select: { id: true, name: true, phone: true, email: true },
-      });
-    }
-  }
+  // Customer profile must already be linked during verified OTP sign-in or registration
+  const customer = user.customer;
+  if (!customer) return null;
 
   return {
     userId: user.id,

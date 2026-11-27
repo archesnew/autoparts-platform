@@ -143,16 +143,24 @@ async function main() {
     assert.ok(currentUrl.includes("/login"), "Unauthenticated user must be redirected to /login");
     console.log(`  ✓ Protected route /admin redirected to login screen: ${currentUrl}`);
 
+    const adminEmail = process.env.ZAPTUT_ADMIN_EMAIL?.trim();
+    const adminPassword = process.env.ZAPTUT_ADMIN_PASSWORD;
+    const demoEmail = process.env.DEMO_VIEWER_EMAIL?.trim();
+    const demoPassword = process.env.DEMO_VIEWER_PASSWORD;
+    if (!adminEmail || !adminPassword || !demoEmail || !demoPassword) {
+      throw new Error("Set ZAPTUT_ADMIN_EMAIL, ZAPTUT_ADMIN_PASSWORD, DEMO_VIEWER_EMAIL, and DEMO_VIEWER_PASSWORD.");
+    }
+
     // 3. Authenticate as SUPER_ADMIN (Owner)
-    console.log("\n--> 3. Authenticating as SUPER_ADMIN (Owner: owner@zaptut.pro)...");
+    console.log(`\n--> 3. Authenticating as SUPER_ADMIN (Owner: ${adminEmail})...`);
     const superAdminLogin = await cdp.eval(`
       (async () => {
         const res = await fetch("/api/auth/sign-in/email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            email: "owner@zaptut.pro",
-            password: "ZaptutOwner2026!SuperAdmin"
+            email: ${JSON.stringify(adminEmail)},
+            password: ${JSON.stringify(adminPassword)}
           })
         });
         return { status: res.status, ok: res.ok };
@@ -205,7 +213,7 @@ async function main() {
     console.log("  ✓ SuperAdmin session signed out and cookies cleared");
 
     // 5. Authenticate as DEMO_VIEWER (Partner)
-    console.log("\n--> 5. Authenticating as DEMO_VIEWER (demo.partner@zaptut.pro)...");
+    console.log(`\n--> 5. Authenticating as DEMO_VIEWER (${demoEmail})...`);
     await cdp.navigate(`${baseUrl}/login`);
     const demoLogin = await cdp.eval(`
       (async () => {
@@ -213,8 +221,8 @@ async function main() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            email: "demo.partner@zaptut.pro",
-            password: "ZaptutDemo2026!Partner"
+            email: ${JSON.stringify(demoEmail)},
+            password: ${JSON.stringify(demoPassword)}
           })
         });
         return { status: res.status, ok: res.ok };

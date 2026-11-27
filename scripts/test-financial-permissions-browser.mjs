@@ -209,32 +209,38 @@ async function main() {
   });
   assert(supplier, "Supplier 'Север Авто Деталь' must exist");
 
+  const adminEmail = process.env.ZAPTUT_ADMIN_EMAIL?.trim();
+  const adminPassword = process.env.ZAPTUT_ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    throw new Error("Set ZAPTUT_ADMIN_EMAIL and ZAPTUT_ADMIN_PASSWORD in environment.");
+  }
+
   // Test accounts definitions
   const testAccounts = {
     superAdmin: {
-      email: "mr.artursabirov@gmail.com",
-      password: "Duraki88!Duraki88!",
+      email: adminEmail,
+      password: adminPassword,
       role: "SUPER_ADMIN",
-      name: "Артур Сабиров",
+      name: "Super Admin",
       isReal: true,
     },
     manager: {
       email: "mgr.fin.qa@zaptut.pro",
-      password: "ManagerQA2026!Secure",
+      password: randomUUID() + "!Qa1",
       role: "MANAGER",
       name: "Тестовый Менеджер QA",
       isReal: false,
     },
     adminNoFin: {
       email: "admin.nofin.qa@zaptut.pro",
-      password: "AdminNoFin2026!Secure",
+      password: randomUUID() + "!Qa2",
       role: "ADMIN",
       name: "Администратор без Финансов QA",
       isReal: false,
     },
     adminWithFin: {
       email: "admin.fin.qa@zaptut.pro",
-      password: "AdminFin2026!Secure",
+      password: randomUUID() + "!Qa3",
       role: "ADMIN",
       name: "Администратор с Финансами QA",
       overrides: [{ code: "quotes.purchase.read", effect: "GRANT" }],
@@ -242,14 +248,14 @@ async function main() {
     },
     logistics: {
       email: "logistics.qa@zaptut.pro",
-      password: "LogisticsQA2026!Secure",
+      password: randomUUID() + "!Qa4",
       role: "LOGISTICS",
       name: "Логист QA",
       isReal: false,
     },
     supplier: {
       email: "rep.sever.qa@example.test",
-      password: "SupplierQA2026!Secure",
+      password: randomUUID() + "!Qa5",
       role: "SUPPLIER",
       supplierId: supplier.id,
       name: "Алексей Северный QA",

@@ -46,7 +46,7 @@ test("Customer Phone Auth & ZAPTUT GARAGE Suite", async (t) => {
   });
 
   await t.test("2. Send OTP with 60s cooldown and rate limiting", async () => {
-    smsService.resetRateLimits();
+    await smsService.resetRateLimits();
 
     // 1st send should succeed
     const res1 = await customerPhoneAuthService.sendOtp(testPhoneRu, "127.0.0.1");
@@ -104,7 +104,7 @@ test("Customer Phone Auth & ZAPTUT GARAGE Suite", async (t) => {
 
   await t.test("4. New customer registration via correct OTP & Customer profile auto-creation", async () => {
     // Reset rate limits and send fresh OTP
-    smsService.resetRateLimits();
+    await smsService.resetRateLimits();
     await customerPhoneAuthService.sendOtp(testPhoneRu, "127.0.0.1");
 
     const record = await prisma.verification.findFirst({
@@ -112,11 +112,16 @@ test("Customer Phone Auth & ZAPTUT GARAGE Suite", async (t) => {
     });
     assert.ok(record);
     const payload = JSON.parse(record.value);
+    assert.equal(payload.code, undefined, "Plaintext OTP must NEVER be persisted in DB");
+    assert.ok(payload.codeHash, "SHA-256 codeHash must be stored");
 
-    // Verify with actual code
+    const sentCode = smsService.getMockStore().getLatestOtp(testPhoneRu);
+    assert.ok(sentCode);
+
+    // Verify with actual code delivered via SMS transport
     const verifyRes = await customerPhoneAuthService.verifyOtp({
       rawPhone: testPhoneRu,
-      code: payload.code,
+      code: sentCode,
     });
     assert.equal(verifyRes.success, true);
     if (verifyRes.success) {
@@ -137,7 +142,7 @@ test("Customer Phone Auth & ZAPTUT GARAGE Suite", async (t) => {
     // Test one-time use: re-using the same code must fail
     const replayRes = await customerPhoneAuthService.verifyOtp({
       rawPhone: testPhoneRu,
-      code: payload.code,
+      code: sentCode,
     });
     assert.equal(replayRes.success, false);
     if (!replayRes.success) {
@@ -156,16 +161,14 @@ test("Customer Phone Auth & ZAPTUT GARAGE Suite", async (t) => {
       },
     });
 
-    smsService.resetRateLimits();
+    await smsService.resetRateLimits();
     await customerPhoneAuthService.sendOtp(testPhoneBy, "127.0.0.1");
-    const record = await prisma.verification.findFirst({
-      where: { identifier: `phone_otp:${testPhoneBy}` },
-    });
-    const payload = JSON.parse(record.value);
+    const sentCodeBy = smsService.getMockStore().getLatestOtp(testPhoneBy);
+    assert.ok(sentCodeBy);
 
     const verifyRes = await customerPhoneAuthService.verifyOtp({
       rawPhone: testPhoneBy,
-      code: payload.code,
+      code: sentCodeBy,
     });
     assert.equal(verifyRes.success, true);
     if (verifyRes.success) {
@@ -185,16 +188,14 @@ test("Customer Phone Auth & ZAPTUT GARAGE Suite", async (t) => {
       data: { name: "Профиль 2", phone: testPhonePl, normalizedPhone: testPhonePl, userId: null },
     });
 
-    smsService.resetRateLimits();
+    await smsService.resetRateLimits();
     await customerPhoneAuthService.sendOtp(testPhonePl, "127.0.0.1");
-    const record = await prisma.verification.findFirst({
-      where: { identifier: `phone_otp:${testPhonePl}` },
-    });
-    const payload = JSON.parse(record.value);
+    const sentCodePl = smsService.getMockStore().getLatestOtp(testPhonePl);
+    assert.ok(sentCodePl);
 
     const verifyRes = await customerPhoneAuthService.verifyOtp({
       rawPhone: testPhonePl,
-      code: payload.code,
+      code: sentCodePl,
     });
     assert.equal(verifyRes.success, true);
     if (verifyRes.success) {

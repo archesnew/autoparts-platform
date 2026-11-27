@@ -81,12 +81,18 @@ class CdpClient {
 }
 
 async function main() {
+  const adminEmail = process.env.ZAPTUT_ADMIN_EMAIL?.trim();
+  const adminPassword = process.env.ZAPTUT_ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    throw new Error("Set ZAPTUT_ADMIN_EMAIL and ZAPTUT_ADMIN_PASSWORD in environment.");
+  }
+
   console.log("Checking DB connection...");
   const superAdmin = await prisma.user.findUnique({
-    where: { email: "mr.artursabirov@gmail.com" },
+    where: { email: adminEmail },
   });
   if (!superAdmin) {
-    throw new Error("SuperAdmin user mr.artursabirov@gmail.com not found!");
+    throw new Error(`SuperAdmin user ${adminEmail} not found!`);
   }
   console.log("SuperAdmin user verified:", superAdmin.email, "role:", superAdmin.role);
 
@@ -145,8 +151,8 @@ async function main() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email: "mr.artursabirov@gmail.com",
-          password: "Duraki88!Duraki88!"
+          email: ${JSON.stringify(adminEmail)},
+          password: ${JSON.stringify(adminPassword)}
         }),
       });
       return { ok: res.ok, status: res.status };

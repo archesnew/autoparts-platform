@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
           search: query,
           isPopularOnly: isPopularOnly ? true : undefined,
           category,
-          limit: 100,
+          limit: 600,
         });
         return NextResponse.json({
           makes: result.makes,
@@ -35,7 +35,7 @@ export async function GET(req: NextRequest) {
         }
         const result = await vehicleQueryService.listModels(makeId, {
           search: query,
-          limit: 150,
+          limit: 2000,
         });
         return NextResponse.json({
           models: result.models,
@@ -49,6 +49,14 @@ export async function GET(req: NextRequest) {
         }
         const generations = await vehicleQueryService.listGenerations(modelId, query);
         return NextResponse.json({ generations });
+      }
+
+      case "combined": {
+        if (!query || query.trim().length < 2) {
+          return NextResponse.json({ matches: [] });
+        }
+        const matches = await vehicleQueryService.searchCombinedVehicles(query);
+        return NextResponse.json({ matches });
       }
 
       case "years": {
@@ -81,14 +89,24 @@ export async function GET(req: NextRequest) {
       }
 
       case "options": {
-        if (!generationId) {
-          return NextResponse.json({ error: "Параметр generationId обязателен" }, { status: 400 });
+        if (!generationId && !modelId) {
+          return NextResponse.json({ error: "Параметр generationId или modelId обязателен" }, { status: 400 });
+        }
+        if (!generationId && modelId) {
+          const modelOpts = await vehicleQueryService.listModelLevelOptions(modelId);
+          return NextResponse.json({
+            years: modelOpts.years,
+            yearSemantics: modelOpts.yearSemantics,
+            bodyTypes: modelOpts.bodyTypes,
+            engines: [],
+            modifications: [],
+          });
         }
         const [years, bodyTypes, engines, modifications] = await Promise.all([
-          vehicleQueryService.listYears(generationId),
+          vehicleQueryService.listYears(generationId!),
           vehicleQueryService.listBodyTypes(generationId),
-          vehicleQueryService.listEngines(generationId, query),
-          vehicleQueryService.listModifications(generationId, engineId, query),
+          vehicleQueryService.listEngines(generationId!, query),
+          vehicleQueryService.listModifications(generationId!, engineId, query),
         ]);
         return NextResponse.json({
           years,

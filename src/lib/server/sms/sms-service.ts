@@ -1,115 +1,103 @@
+import "server-only";
+
 import { detectCountryFromE164, isValidE164 } from "@/lib/phone-utils";
 import type { SmsCountry, SmsProvider, SmsSendResult } from "./types";
 import { mockSmsProvider } from "./mock-provider";
 import { russianGatewaySmsProvider } from "./russian-gateway-provider";
 import { fallbackGatewaySmsProvider } from "./fallback-gateway-provider";
+import {
+  clearRateLimitBuckets,
+  consumeRateLimitBucket,
+  sha256Hex,
+} from "@/lib/server/security/rate-limiter";
 
 export type RateLimitCheckResult =
   | { allowed: true }
-  | { allowed: false; retryAfterSeconds: number; reason: "COOLDOWN" | "HOURLY_PHONE" | "HOURLY_IP" };
-
-type PhoneRateRecord = {
-  lastSentAt: number;
-  hourlyRequests: number[];
-};
-
-type IpRateRecord = {
-  hourlyRequests: number[];
-};
+  | {
+      allowed: false;
+      retryAfterSeconds: number;
+      reason: "COOLDOWN" | "HOURLY_PHONE" | "HOURLY_IP" | "GLOBAL_PUMPING";
+    };
 
 export class SmsService {
   private primaryRuProvider: SmsProvider = russianGatewaySmsProvider;
   private fallbackProvider: SmsProvider = fallbackGatewaySmsProvider;
   private mockProvider = mockSmsProvider;
 
-  // In-memory rate limiting state
-  private phoneRateMap = new Map<string, PhoneRateRecord>();
-  private ipRateMap = new Map<string, IpRateRecord>();
-
   /**
-   * Resets rate limits (useful in tests)
+   * Resets persisted PostgreSQL OTP rate-limit buckets (intended for automated test isolation only).
    */
-  resetRateLimits() {
-    this.phoneRateMap.clear();
-    this.ipRateMap.clear();
+  async resetRateLimits(): Promise<void> {
+    await clearRateLimitBuckets("otp:");
   }
 
   /**
-   * Enforces 60-second cooldown and hourly limits per phone and per IP
+   * Atomically enforces cooldown (60s), per-phone hourly limit (5/h),
+   * per-IP hourly limit (10/h), and global anti-SMS-pumping threshold (60/min) in PostgreSQL.
    */
-  checkRateLimit(phone: string, ip?: string | null): RateLimitCheckResult {
-    const now = Date.now();
+  async checkAndConsumeRateLimit(phone: string, ip?: string | null): Promise<RateLimitCheckResult> {
+    const phoneHash = sha256Hex(phone);
 
-    // 1. Phone rate limit
-    let pRecord = this.phoneRateMap.get(phone);
-    if (!pRecord) {
-      pRecord = { lastSentAt: 0, hourlyRequests: [] };
-      this.phoneRateMap.set(phone, pRecord);
-    }
-
-    // Cooldown check: 60 seconds
-    const diffSeconds = Math.floor((now - pRecord.lastSentAt) / 1000);
-    if (diffSeconds < 60 && pRecord.lastSentAt > 0) {
+    // 1. Cooldown check: 1 request per 60 seconds per phone
+    const cooldown = await consumeRateLimitBucket({
+      key: `otp:cooldown:${phoneHash}`,
+      limit: 1,
+      windowSeconds: 60,
+    });
+    if (!cooldown.allowed) {
       return {
         allowed: false,
-        retryAfterSeconds: 60 - diffSeconds,
+        retryAfterSeconds: cooldown.retryAfterSeconds,
         reason: "COOLDOWN",
       };
     }
 
-    // Hourly limit: max 5 requests per hour
-    const oneHourAgo = now - 60 * 60 * 1000;
-    pRecord.hourlyRequests = pRecord.hourlyRequests.filter((t) => t > oneHourAgo);
-    if (pRecord.hourlyRequests.length >= 5) {
-      const oldest = pRecord.hourlyRequests[0];
-      const retryAfter = Math.ceil((oldest + 60 * 60 * 1000 - now) / 1000);
+    // 2. Per-phone hourly cap (max 5 requests per hour)
+    const phoneHour = await consumeRateLimitBucket({
+      key: `otp:hour:phone:${phoneHash}`,
+      limit: 5,
+      windowSeconds: 3600,
+    });
+    if (!phoneHour.allowed) {
       return {
         allowed: false,
-        retryAfterSeconds: Math.max(1, retryAfter),
+        retryAfterSeconds: phoneHour.retryAfterSeconds,
         reason: "HOURLY_PHONE",
       };
     }
 
-    // 2. IP rate limit (if provided)
-    if (ip && ip !== "127.0.0.1" && ip !== "::1") {
-      let ipRecord = this.ipRateMap.get(ip);
-      if (!ipRecord) {
-        ipRecord = { hourlyRequests: [] };
-        this.ipRateMap.set(ip, ipRecord);
-      }
-      ipRecord.hourlyRequests = ipRecord.hourlyRequests.filter((t) => t > oneHourAgo);
-      if (ipRecord.hourlyRequests.length >= 15) {
-        const oldest = ipRecord.hourlyRequests[0];
-        const retryAfter = Math.ceil((oldest + 60 * 60 * 1000 - now) / 1000);
-        return {
-          allowed: false,
-          retryAfterSeconds: Math.max(1, retryAfter),
-          reason: "HOURLY_IP",
-        };
-      }
+    // 3. Per-IP hourly cap (also applies to "unknown" to prevent header omission bypass)
+    const normalizedIp = ip?.trim() || "unknown";
+    const ipLimit = normalizedIp === "unknown" ? 20 : 10;
+    const ipHour = await consumeRateLimitBucket({
+      key: `otp:hour:ip:${sha256Hex(normalizedIp)}`,
+      limit: ipLimit,
+      windowSeconds: 3600,
+    });
+    if (!ipHour.allowed) {
+      return {
+        allowed: false,
+        retryAfterSeconds: ipHour.retryAfterSeconds,
+        reason: "HOURLY_IP",
+      };
+    }
+
+    // 4. Global anti-SMS-pumping circuit breaker (configurable via env, default 60/min)
+    const globalPerMinute = Number(process.env.SMS_GLOBAL_LIMIT_PER_MINUTE || 60);
+    const globalCheck = await consumeRateLimitBucket({
+      key: "otp:global:minute",
+      limit: Number.isFinite(globalPerMinute) && globalPerMinute > 0 ? globalPerMinute : 60,
+      windowSeconds: 60,
+    });
+    if (!globalCheck.allowed) {
+      return {
+        allowed: false,
+        retryAfterSeconds: globalCheck.retryAfterSeconds,
+        reason: "GLOBAL_PUMPING",
+      };
     }
 
     return { allowed: true };
-  }
-
-  private recordSend(phone: string, ip?: string | null) {
-    const now = Date.now();
-    let pRecord = this.phoneRateMap.get(phone);
-    if (!pRecord) {
-      pRecord = { lastSentAt: 0, hourlyRequests: [] };
-      this.phoneRateMap.set(phone, pRecord);
-    }
-    pRecord.lastSentAt = now;
-    pRecord.hourlyRequests.push(now);
-
-    if (ip && ip !== "127.0.0.1" && ip !== "::1") {
-      let ipRecord = this.ipRateMap.get(ip);
-      if (!ipRecord) {
-        ipRecord = { hourlyRequests: [] };
-        this.ipRateMap.set(ip, ipRecord);
-      }
-      ipRecord.hourlyRequests.push(now);
-    }
   }
 
   /**
@@ -130,8 +118,8 @@ export class SmsService {
       };
     }
 
-    // Rate limit check
-    const rateCheck = this.checkRateLimit(to, ip);
+    // Atomic PostgreSQL rate limit & anti-pumping check BEFORE provider dispatch
+    const rateCheck = await this.checkAndConsumeRateLimit(to, ip);
     if (!rateCheck.allowed) {
       const isCooldown = rateCheck.reason === "COOLDOWN";
       return {
@@ -150,7 +138,6 @@ export class SmsService {
     const isExplicitMock = process.env.SMS_PROVIDER === "mock";
     const isDevOrTest = process.env.NODE_ENV !== "production" || isExplicitMock;
 
-    // Determine target provider
     let providerToUse: SmsProvider | null = null;
 
     if (country === "RU") {
@@ -163,12 +150,10 @@ export class SmsService {
       }
     }
 
-    // In dev / test or when SMS_PROVIDER=mock, allow designated test adapter
     if (!providerToUse && isDevOrTest) {
       providerToUse = this.mockProvider;
     }
 
-    // In production, if provider credentials are not set, return explicit SMS_NOT_CONFIGURED error
     if (!providerToUse) {
       return {
         success: false,
@@ -177,7 +162,6 @@ export class SmsService {
       };
     }
 
-    // Execute send
     let result = await providerToUse.send({
       to,
       text,
@@ -185,7 +169,6 @@ export class SmsService {
       country,
     });
 
-    // If primary failed and fallback is configured and different, try fallback
     if (!result.success && providerToUse !== this.fallbackProvider && this.fallbackProvider.isConfigured()) {
       result = await this.fallbackProvider.send({
         to,
@@ -193,10 +176,6 @@ export class SmsService {
         otp: code,
         country,
       });
-    }
-
-    if (result.success) {
-      this.recordSend(to, ip);
     }
 
     return result;

@@ -1,5 +1,5 @@
 import { XMLParser } from "fast-xml-parser";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 export type RawFeedItem = Record<string, unknown>;
 
@@ -34,12 +34,11 @@ export function detectFormat(fileName: string, buffer: Buffer): "YML" | "XML" | 
 
 /** Safe, streaming CSV parser supporting ;, ,, \t and quotes */
 export function parseCsv(buffer: Buffer): RawFeedItem[] {
-  // Decode UTF-8 or CP1251 (basic detection)
   let text: string;
   try {
     text = buffer.toString("utf8");
     if (text.charCodeAt(0) === 0xfeff) {
-      text = text.slice(1); // strip BOM
+      text = text.slice(1);
     }
   } catch {
     text = buffer.toString("latin1");
@@ -48,7 +47,6 @@ export function parseCsv(buffer: Buffer): RawFeedItem[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length === 0) return [];
 
-  // Detect delimiter from first line
   const firstLine = lines[0];
   const countSemi = (firstLine.match(/;/g) || []).length;
   const countComma = (firstLine.match(/,/g) || []).length;
@@ -114,20 +112,17 @@ export function parseXmlOrYml(buffer: Buffer): RawFeedItem[] {
     attributeNamePrefix: "@_",
     trimValues: true,
     parseTagValue: true,
-    // Security: do NOT resolve entities or external DTDs
     processEntities: false,
   });
 
   const parsed = parser.parse(xmlContent);
   if (!parsed || typeof parsed !== "object") return [];
 
-  // YML standard: yml_catalog -> shop -> offers -> offer
   if (parsed.yml_catalog?.shop?.offers?.offer) {
     const rawOffers = parsed.yml_catalog.shop.offers.offer;
     return Array.isArray(rawOffers) ? rawOffers : [rawOffers];
   }
 
-  // Avito / Drom / Standard feeds: items -> item, parts -> part, offers -> offer
   const root = parsed.items || parsed.parts || parsed.offers || parsed.catalog || parsed;
   const items = root.item || root.part || root.offer || root.product;
 
@@ -135,10 +130,8 @@ export function parseXmlOrYml(buffer: Buffer): RawFeedItem[] {
     return Array.isArray(items) ? items : [items];
   }
 
-  // If root is an array of objects
   if (Array.isArray(root)) return root;
 
-  // Search first array in root
   for (const key of Object.keys(parsed)) {
     const val = parsed[key];
     if (val && typeof val === "object") {
@@ -153,40 +146,86 @@ export function parseXmlOrYml(buffer: Buffer): RawFeedItem[] {
   return [];
 }
 
-/** Safe XLSX parser without macro or formula evaluation */
-export function parseXlsx(buffer: Buffer): RawFeedItem[] {
-  const workbook = XLSX.read(buffer, {
-    type: "buffer",
-    cellFormula: false,
-    cellHTML: false,
-    dense: false,
-  });
+function extractSafeCellValue(raw: ExcelJS.CellValue): string {
+  if (raw === null || raw === undefined) return "";
+  if (typeof raw === "string") return raw.trim();
+  if (typeof raw === "number" || typeof raw === "boolean") return String(raw);
+  if (raw instanceof Date) return raw.toISOString();
 
-  const firstSheetName = workbook.SheetNames[0];
-  if (!firstSheetName) return [];
-
-  const worksheet = workbook.Sheets[firstSheetName];
-  const rows = XLSX.utils.sheet_to_json<RawFeedItem>(worksheet, {
-    defval: "",
-    raw: false,
-  });
-
-  // Lowercase keys
-  return rows.map((row) => {
-    const normalized: RawFeedItem = {};
-    for (const [k, v] of Object.entries(row)) {
-      normalized[k.trim().toLowerCase()] = typeof v === "string" ? v.trim() : v;
+  if (typeof raw === "object") {
+    // RichText cell
+    if ("richText" in raw && Array.isArray(raw.richText)) {
+      return raw.richText
+        .map((part) => (typeof part.text === "string" ? part.text : ""))
+        .join("")
+        .trim();
     }
-    return normalized;
+    // Hyperlink cell
+    if ("text" in raw && typeof raw.text === "string") {
+      return raw.text.trim();
+    }
+    // Formula cell: read cached scalar result only; never evaluate formulas
+    if ("result" in raw && raw.result !== undefined && raw.result !== null) {
+      if (typeof raw.result === "object" && "error" in raw.result) {
+        return "";
+      }
+      return String(raw.result).trim();
+    }
+  }
+
+  return "";
+}
+
+/** Safe XLSX parser using ExcelJS (no macro or formula evaluation, full Cyrillic UTF-8 support) */
+export async function parseXlsx(buffer: Buffer): Promise<RawFeedItem[]> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer as unknown as Parameters<ExcelJS.Workbook["xlsx"]["load"]>[0]);
+
+  const worksheet = workbook.worksheets.find((ws) => ws.rowCount > 0) ?? workbook.worksheets[0];
+  if (!worksheet || worksheet.rowCount === 0) return [];
+
+  let headers: string[] | null = null;
+  const rows: RawFeedItem[] = [];
+
+  worksheet.eachRow({ includeEmpty: false }, (row) => {
+    const colCount = Math.max(row.cellCount, headers?.length || 0);
+    const values: string[] = [];
+    for (let colIdx = 1; colIdx <= colCount; colIdx++) {
+      values.push(extractSafeCellValue(row.getCell(colIdx).value));
+    }
+
+    if (!headers) {
+      // First non-empty row becomes normalized lowercase headers
+      const hasHeaderText = values.some((v) => v.length > 0);
+      if (hasHeaderText) {
+        headers = values.map((v) => v.trim().toLowerCase());
+      }
+      return;
+    }
+
+    const item: RawFeedItem = {};
+    let hasValue = false;
+    headers.forEach((headerKey, idx) => {
+      if (!headerKey) return;
+      const cellStr = values[idx] ?? "";
+      if (cellStr !== "") hasValue = true;
+      item[headerKey] = cellStr;
+    });
+
+    if (hasValue) {
+      rows.push(item);
+    }
   });
+
+  return rows;
 }
 
 /** Unified feed entry point */
-export function parseFeedBuffer(
+export async function parseFeedBuffer(
   fileName: string,
   buffer: Buffer,
   forcedFormat?: "YML" | "XML" | "CSV" | "XLSX"
-): ParsedFeedResult {
+): Promise<ParsedFeedResult> {
   if (buffer.length > MAX_FILE_SIZE_BYTES) {
     throw new Error(`Размер файла превышает лимит ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} МБ`);
   }
@@ -203,7 +242,7 @@ export function parseFeedBuffer(
       rows = parseCsv(buffer);
       break;
     case "XLSX":
-      rows = parseXlsx(buffer);
+      rows = await parseXlsx(buffer);
       break;
     default:
       rows = parseCsv(buffer);

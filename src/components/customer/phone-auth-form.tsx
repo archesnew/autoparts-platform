@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   SUPPORTED_COUNTRIES,
@@ -36,7 +37,6 @@ export function PhoneAuthForm({
   const [cooldown, setCooldown] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [devOtpHint, setDevOtpHint] = useState<string | null>(null);
 
   // Active country config
   const activeCountry = SUPPORTED_COUNTRIES.find((c) => c.code === countryCode) || SUPPORTED_COUNTRIES[0];
@@ -70,7 +70,6 @@ export function PhoneAuthForm({
   const handleSendOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setError(null);
-    setDevOtpHint(null);
 
     const fullRaw = `${activeCountry.dialCode}${nationalDigits}`;
     const norm = normalizeToE164(fullRaw);
@@ -101,9 +100,6 @@ export function PhoneAuthForm({
 
       setNormalizedPhone(data.normalizedPhone || norm);
       setCooldown(data.cooldownSeconds || 60);
-      if (data.devOtpCode) {
-        setDevOtpHint(data.devOtpCode);
-      }
       setStep("OTP_INPUT");
       setOtpDigits(["", "", "", "", "", ""]);
 
@@ -299,23 +295,6 @@ export function PhoneAuthForm({
         </form>
       ) : (
         <div className="space-y-5">
-          {devOtpHint && (
-            <div className="border border-[#ff6428]/40 bg-[#ff6428]/10 p-3 text-xs text-[#ff986f]">
-              <span>Тестовый SMS-код: </span>
-              <button
-                type="button"
-                onClick={() => {
-                  const digits = devOtpHint.split("").slice(0, 6);
-                  setOtpDigits(digits);
-                  verifyOtpCode(devOtpHint);
-                }}
-                className="font-mono font-bold underline hover:text-[#f1f0eb]"
-              >
-                {devOtpHint} (нажмите для ввода)
-              </button>
-            </div>
-          )}
-
           {/* OTP Digit boxes */}
           <div>
             <label className="block text-[10px] font-bold uppercase tracking-wider text-[#888b8d]">
@@ -387,10 +366,22 @@ export function PhoneAuthForm({
         </div>
       )}
 
-      {/* Trust & Security note */}
+      {/* 152-ФЗ Trust & Legal Consent note */}
       <div className="mt-6 border-t border-[#383e41]/60 pt-4 text-center">
-        <p className="text-[11px] leading-relaxed text-[#5e6568]">
-          Нажимая «Получить код», вы принимаете соглашение об обработке персональных данных и правила обслуживания ZAPTUT.PRO. Пароль не требуется.
+        <p className="text-[11px] leading-relaxed text-[#888b8d]">
+          Нажимая «Получить SMS-код», вы даёте{" "}
+          <Link href="/consent" target="_blank" className="text-[#f1f0eb] underline decoration-[#ff6428] underline-offset-2 transition hover:text-[#ff865c]">
+            согласие на обработку персональных данных
+          </Link>{" "}
+          и принимаете условия{" "}
+          <Link href="/privacy-policy" target="_blank" className="text-[#f1f0eb] underline decoration-[#ff6428] underline-offset-2 transition hover:text-[#ff865c]">
+            политики конфиденциальности
+          </Link>{" "}
+          и{" "}
+          <Link href="/terms" target="_blank" className="text-[#f1f0eb] underline decoration-[#ff6428] underline-offset-2 transition hover:text-[#ff865c]">
+            пользовательского соглашения
+          </Link>
+          . Пароль не требуется.
         </p>
       </div>
     </div>

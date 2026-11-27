@@ -93,8 +93,13 @@ async function main() {
 
   // 3. Create DEMO_VIEWER partner account
   console.log("3. Creating DEMO_VIEWER partner user...");
-  const demoEmail = (process.env.DEMO_VIEWER_EMAIL || "demo.partner@zaptut.pro").trim().toLowerCase();
-  const demoPass = process.env.DEMO_VIEWER_PASSWORD || "ZaptutDemo2026!Partner";
+  const requireEnv = (name) => {
+    const val = process.env[name]?.trim();
+    if (!val) throw new Error(`Missing required environment variable: ${name}`);
+    return val;
+  };
+  const demoEmail = requireEnv("DEMO_VIEWER_EMAIL").toLowerCase();
+  const demoPass = requireEnv("DEMO_VIEWER_PASSWORD");
   const demoHash = await hashPassword(demoPass);
 
   let demoUser = await prisma.user.findUnique({ where: { email: demoEmail } });
@@ -129,9 +134,9 @@ async function main() {
 
   // 4. Create SUPER_ADMIN owner account
   console.log("4. Creating SUPER_ADMIN owner user...");
-  const ownerEmail = (process.env.ZAPTUT_ADMIN_EMAIL || "owner@zaptut.pro").trim().toLowerCase();
+  const ownerEmail = requireEnv("ZAPTUT_ADMIN_EMAIL").toLowerCase();
   const ownerName = process.env.ZAPTUT_ADMIN_NAME || "Владелец ZAPTUT.PRO";
-  const ownerPass = process.env.ZAPTUT_ADMIN_PASSWORD || "ZaptutOwner2026!SuperAdmin";
+  const ownerPass = requireEnv("ZAPTUT_ADMIN_PASSWORD");
   const ownerHash = await hashPassword(ownerPass);
 
   let ownerUser = await prisma.user.findUnique({ where: { email: ownerEmail } });

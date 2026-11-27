@@ -1,8 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomBytes, randomUUID } from "node:crypto";
 import { prisma } from "./db.ts";
 import { customerPortalService } from "./customer-portal-service.ts";
 import { auth } from "./auth.ts";
+import { sha256Hex, clearRateLimitBuckets } from "./security/rate-limiter.ts";
 
 test("Customer Portal: End-to-end integration test with PostgreSQL", async (t) => {
   const timestamp = Date.now();
@@ -58,6 +60,10 @@ test("Customer Portal: End-to-end integration test with PostgreSQL", async (t) =
       if (customerB?.id) {
         await prisma.customer.delete({ where: { id: customerB.id } });
       }
+      await prisma.verification.deleteMany({
+        where: { identifier: `pwd_reset:${emailA}` },
+      });
+      await clearRateLimitBuckets("pwd_reset:");
     } catch (e) {
       // Best-effort cleanup
     }
@@ -115,18 +121,43 @@ test("Customer Portal: End-to-end integration test with PostgreSQL", async (t) =
     assert.equal(userInDb.role, "CUSTOMER");
   });
 
-  await t.test("3. Password Reset Workflow", async () => {
-    const forgotRes = await customerPortalService.requestPasswordReset(emailA);
-    assert.ok(forgotRes.token);
-    assert.ok(forgotRes.resetUrl.includes(forgotRes.token));
+  await t.test("3. Password Reset Workflow (no token leak + hashed single-use token)", async () => {
+    await clearRateLimitBuckets("pwd_reset:");
+    const forgotRes = await customerPortalService.requestPasswordReset(emailA, "127.0.0.10");
+    assert.equal(forgotRes.success, true);
+    assert.equal("token" in forgotRes, false, "Public API must NEVER return reset token");
+    assert.equal("resetUrl" in forgotRes, false, "Public API must NEVER return resetUrl");
+
+    const unknownRes = await customerPortalService.requestPasswordReset(
+      `unknown-${timestamp}@test.example`,
+      "127.0.0.10"
+    );
+    assert.deepEqual(forgotRes, unknownRes, "Response must be identical regardless of account existence");
+
+    // Simulate out-of-band server-side token issuance & verify single-use hashed redemption
+    const rawToken = randomBytes(32).toString("hex");
+    await prisma.verification.create({
+      data: {
+        id: randomUUID(),
+        identifier: `pwd_reset:${emailA}`,
+        value: sha256Hex(`${emailA}:${rawToken}`),
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+      },
+    });
 
     const newPass = "NewSecretPass456!";
     const resetRes = await customerPortalService.resetPassword({
       email: emailA,
-      token: forgotRes.token,
+      token: rawToken,
       newPassword: newPass,
     });
     assert.equal(resetRes.success, true);
+
+    // Token must be single-use
+    await assert.rejects(
+      () => customerPortalService.resetPassword({ email: emailA, token: rawToken, newPassword: "AnotherPass456!" }),
+      /Недействительный|истёкший/
+    );
 
     // Verify customer can sign in with new password
     const signInRes = await auth.api.signInEmail({

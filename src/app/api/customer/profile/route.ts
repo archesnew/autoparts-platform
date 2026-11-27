@@ -71,3 +71,19 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Ошибка обновления профиля" }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const customer = await requireCustomerContext(req.headers);
+    const result = await customerPortalService.requestDataErasure(customer.customerId);
+    return NextResponse.json(result);
+  } catch (error) {
+    if (error instanceof CustomerAuthorizationError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    if (error instanceof CustomerServiceError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
+    return NextResponse.json({ error: "Ошибка обработки запроса на удаление" }, { status: 500 });
+  }
+}

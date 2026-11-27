@@ -101,6 +101,7 @@ model User {
   activityEvents   ActivityLog[]
   supplierMembership SupplierUser?
   customer         Customer?
+  notifications    Notification[]
   staffInvitationsCreated StaffInvitation[] @relation("StaffInvitationsCreated")
   createdAt        DateTime      @default(now()) @db.Timestamptz(6)
   updatedAt        DateTime      @updatedAt @db.Timestamptz(6)
@@ -229,6 +230,7 @@ model Customer {
   addresses       CustomerAddress[]
   requests        Request[]
   orders          Order[]
+  notifications   Notification[]
   createdAt       DateTime          @default(now()) @db.Timestamptz(6)
   updatedAt       DateTime          @updatedAt @db.Timestamptz(6)
 
@@ -518,6 +520,29 @@ model ActivityLog {
   @@index([requestId, occurredAt])
   @@index([orderId, occurredAt])
   @@map("activity_log")
+}
+
+model Notification {
+  id            String    @id @default(uuid()) @db.Uuid
+  eventKey      String?   @unique @map("event_key")
+  recipientType String    @map("recipient_type")
+  customerId    String?   @map("customer_id") @db.Uuid
+  customer      Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  userId        String?   @map("user_id") @db.Uuid
+  user          User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String
+  title         String
+  message       String
+  link          String?
+  entityType    String?   @map("entity_type")
+  entityId      String?   @map("entity_id") @db.Uuid
+  readAt        DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([recipientType, customerId, readAt])
+  @@index([recipientType, userId, readAt])
+  @@index([createdAt])
+  @@map("notifications")
 }
 
 enum ProductStatus {
@@ -998,7 +1023,8 @@ model VehicleMake {
   country            String?
   logoUrl            String?                 @map("logo_url")
   isPopular          Boolean                 @default(false) @map("is_popular")
-  category           String                  @default("PASSENGER") // PASSENGER, COMMERCIAL, MOTO
+  popularityScore    Int?                    @map("popularity_score")
+  category           String                  @default("PASSENGER") // PASSENGER, COMMERCIAL, MOTO, TRUCK, BUS
   completenessStatus VehicleDataCompleteness @default(STANDARD) @map("completeness_status")
   primarySourceId    String?                 @map("primary_source_id")
   models             VehicleModel[]
@@ -1010,7 +1036,8 @@ model VehicleMake {
 
   @@index([name])
   @@index([nameRu])
-  @@index([isPopular])
+  @@index([isPopular, popularityScore])
+  @@index([category])
   @@map("vehicle_makes")
 }
 
@@ -1022,8 +1049,11 @@ model VehicleModel {
   nameRu             String?                 @map("name_ru")
   yearFrom           Int?                    @map("year_from")
   yearTo             Int?                    @map("year_to")
+  yearSemantics      String?                 @map("year_semantics") // MODEL_YEAR, PRODUCTION_YEAR, REGISTRATION_YEAR, CATALOG_YEAR, MIXED
+  bodyTypes          String[]                @default([]) @map("body_types")
   isPopular          Boolean                 @default(false) @map("is_popular")
-  category           String                  @default("CAR") // CAR, SUV, LCV, TRUCK
+  popularityScore    Int?                    @map("popularity_score")
+  category           String                  @default("CAR") // CAR, SUV, LCV, PICKUP, MOTO, TRUCK, BUS
   completenessStatus VehicleDataCompleteness @default(STANDARD) @map("completeness_status")
   primarySourceId    String?                 @map("primary_source_id")
   generations        VehicleGeneration[]
@@ -1036,7 +1066,8 @@ model VehicleModel {
   @@index([makeId])
   @@index([name])
   @@index([nameRu])
-  @@index([isPopular])
+  @@index([isPopular, popularityScore])
+  @@index([category])
   @@map("vehicle_models")
 }
 
@@ -1049,6 +1080,7 @@ model VehicleGeneration {
   code               String?
   yearFrom           Int                     @map("year_from")
   yearTo             Int?                    @map("year_to")
+  yearSemantics      String?                 @map("year_semantics") // PRODUCTION_YEAR, MODEL_YEAR, REGISTRATION_YEAR
   isRestyling        Boolean                 @default(false) @map("is_restyling")
   defaultBodyType    String?                 @map("default_body_type")
   completenessStatus VehicleDataCompleteness @default(STANDARD) @map("completeness_status")
@@ -1161,4 +1193,14 @@ model ProductFitment {
   @@index([makeId, modelId, generationId])
   @@index([modificationId])
   @@map("product_fitments")
+}
+
+model RateLimitBucket {
+  key         String   @id
+  count       Int      @default(0)
+  windowStart DateTime @map("window_start") @db.Timestamptz(6)
+  expiresAt   DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("rate_limit_buckets")
 }

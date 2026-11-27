@@ -244,9 +244,15 @@ export function VehicleCascadingSelector({
     };
   }, [selectedModelId, generationSearch]);
 
-  // 4. Fetch Options (years, bodyTypes, engines, modifications) when generation selected
+  const availableGenerations = useMemo(() => {
+    if (dbGenerations.length > 0) return dbGenerations;
+    if (!selectedModelId) return [];
+    return lookupGenerations(selectedModelId, generationSearch);
+  }, [dbGenerations, selectedModelId, generationSearch]);
+
+  // 4. Fetch Options (years, bodyTypes, engines, modifications) when generation OR model fallback selected
   useEffect(() => {
-    if (!selectedGenerationId) {
+    if (!selectedGenerationId && (!selectedModelId || availableGenerations.length > 0)) {
       setDbYears([]);
       setDbBodyTypes([]);
       setDbEngines([]);
@@ -257,8 +263,11 @@ export function VehicleCascadingSelector({
     const controller = new AbortController();
     async function loadOptions() {
       try {
+        const param = selectedGenerationId
+          ? `generationId=${encodeURIComponent(selectedGenerationId)}`
+          : `modelId=${encodeURIComponent(selectedModelId)}`;
         const res = await fetch(
-          `/api/customer/vehicle-catalog?step=options&generationId=${encodeURIComponent(selectedGenerationId)}`,
+          `/api/customer/vehicle-catalog?step=options&${param}`,
           { signal: controller.signal }
         );
         if (res.ok && active) {
@@ -275,7 +284,7 @@ export function VehicleCascadingSelector({
       active = false;
       controller.abort();
     };
-  }, [selectedGenerationId]);
+  }, [selectedGenerationId, selectedModelId, availableGenerations.length]);
 
   // Fallback / Combined Catalogs
   const availableMakes = useMemo(() => {
@@ -288,12 +297,6 @@ export function VehicleCascadingSelector({
     if (!selectedMakeId) return [];
     return lookupModels(selectedMakeId, modelSearch);
   }, [dbModels, selectedMakeId, modelSearch]);
-
-  const availableGenerations = useMemo(() => {
-    if (dbGenerations.length > 0) return dbGenerations;
-    if (!selectedModelId) return [];
-    return lookupGenerations(selectedModelId, generationSearch);
-  }, [dbGenerations, selectedModelId, generationSearch]);
 
   const availableYears = useMemo(() => {
     if (dbYears.length > 0) return dbYears;
@@ -411,7 +414,7 @@ export function VehicleCascadingSelector({
       setFormError("Шаг 2: Выберите модель автомобиля.");
       return;
     }
-    if (!generation) {
+    if (!generation && availableGenerations.length > 0) {
       setFormError("Шаг 3: Выберите поколение автомобиля.");
       return;
     }
@@ -559,17 +562,21 @@ export function VehicleCascadingSelector({
         {/* 3. Поколение */}
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-wider text-[#aeb5b6]">
-            3. Поколение <span className="text-[#ff6428]">*</span>
+            3. Поколение {availableGenerations.length > 0 && <span className="text-[#ff6428]">*</span>}
           </label>
           <select
             value={selectedGenerationId}
             onChange={(e) => handleGenerationChange(e.target.value)}
-            disabled={!selectedModelId}
+            disabled={!selectedModelId || availableGenerations.length === 0}
             className={`${inputClass} mt-1`}
-            required
+            required={availableGenerations.length > 0}
           >
             <option value="">
-              {!selectedModelId ? "← Сначала выберите модель" : `— Выберите поколение (${availableGenerations.length}) —`}
+              {!selectedModelId
+                ? "← Сначала выберите модель"
+                : availableGenerations.length === 0
+                ? "— Базовый учёт (без поколений) —"
+                : `— Выберите поколение (${availableGenerations.length}) —`}
             </option>
             {availableGenerations.map((g) => (
               <option key={g.id} value={g.id}>
@@ -587,12 +594,16 @@ export function VehicleCascadingSelector({
           <select
             value={year}
             onChange={(e) => setYear(e.target.value ? Number(e.target.value) : "")}
-            disabled={!selectedGenerationId}
+            disabled={!selectedModelId || (availableGenerations.length > 0 && !selectedGenerationId)}
             className={`${inputClass} mt-1`}
-            required
+            required={availableYears.length > 0}
           >
             <option value="">
-              {!selectedGenerationId ? "← Сначала выберите поколение" : "— Выберите год —"}
+              {!selectedModelId
+                ? "← Сначала выберите модель"
+                : availableGenerations.length > 0 && !selectedGenerationId
+                ? "← Сначала выберите поколение"
+                : "— Выберите год —"}
             </option>
             {availableYears.map((y) => (
               <option key={y} value={y}>
@@ -605,14 +616,13 @@ export function VehicleCascadingSelector({
         {/* 5. Тип кузова */}
         <div>
           <label className="block text-[10px] font-bold uppercase tracking-wider text-[#aeb5b6]">
-            5. Тип кузова <span className="text-[#ff6428]">*</span>
+            5. Тип кузова
           </label>
           <select
             value={bodyType}
             onChange={(e) => setBodyType(e.target.value)}
-            disabled={!selectedGenerationId}
+            disabled={!selectedModelId || (availableGenerations.length > 0 && !selectedGenerationId)}
             className={`${inputClass} mt-1`}
-            required
           >
             {availableBodyTypes.length > 0 ? (
               availableBodyTypes.map((bt) => (

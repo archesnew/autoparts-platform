@@ -64,10 +64,14 @@ export type CatalogSearchFilters = {
   make?: string;
   model?: string;
   year?: string;
+  fitmentOnly?: boolean;
   brand?: string;
   condition?: string;
   country?: string;
   availability?: "IN_STOCK" | "ARCHIVED_SOLD" | "";
+  minPrice?: number;
+  maxPrice?: number;
+  sortBy?: "relevance" | "price_asc" | "price_desc" | "newest";
   skip?: number;
   take?: number;
 };

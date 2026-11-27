@@ -60,24 +60,21 @@ export default function CustomerForgotPasswordPage() {
             <p className="mt-1 text-[#c5cbcc]">{result.message}</p>
           </div>
 
-          <div className="border border-amber-600/40 bg-amber-950/20 p-4 text-xs text-amber-200">
+          <div className="border border-[#383e41] bg-[#17191b] p-4 text-xs text-[#c5cbcc]">
             <p className="font-bold uppercase tracking-wide text-[#ff986f]">
-              Статус почтового сервиса
+              Быстрый вход по SMS
             </p>
-            <p className="mt-1 text-[#c5cbcc]">
-              Внешний SMTP/почтовый провайдер находится в процессе подключения. В текущей версии для
-              проверки сформирована прямая ссылка восстановления:
+            <p className="mt-1">
+              Для покупателей ZAPTUT.PRO основной безопасный вход и восстановление доступа работают по одноразовому SMS-коду без использования пароля.
             </p>
-            {result.resetUrl && (
-              <div className="mt-3">
-                <Link
-                  href={result.resetUrl}
-                  className="inline-block bg-[#ff6428] px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#17191b] hover:bg-[#ff8050]"
-                >
-                  Перейти к смене пароля →
-                </Link>
-              </div>
-            )}
+            <div className="mt-3">
+              <Link
+                href="/account/login"
+                className="inline-block bg-[#ff6428] px-4 py-2 text-xs font-bold uppercase tracking-wider text-[#17191b] hover:bg-[#ff8050]"
+              >
+                Войти по номеру телефона →
+              </Link>
+            </div>
           </div>
 
           <div className="pt-2 text-center text-xs">

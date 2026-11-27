@@ -76,7 +76,7 @@ export class ImportService {
     const resolvedSupplierId = supplier.id;
 
     // 1. Parse feed
-    const parsed = parseFeedBuffer(fileName, buffer, forcedFormat);
+    const parsed = await parseFeedBuffer(fileName, buffer, forcedFormat);
 
     // Extract detected headers from first row
     const detectedHeaders = parsed.rows[0] ? Object.keys(parsed.rows[0]) : [];

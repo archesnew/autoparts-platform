@@ -107,9 +107,6 @@ export function OrderRegister({
             <span className="text-[10px] font-bold uppercase tracking-[.18em] text-[#ff6428]">
               Управление заказами
             </span>
-            <span className="rounded bg-[#ff6428]/15 px-2 py-0.5 text-[9px] font-bold text-[#ff865c]">
-              PostgreSQL
-            </span>
           </div>
           <div className="text-[11px] text-[#929a9c]">
             Всего заказов в выборке:{" "}
@@ -222,151 +219,182 @@ export function OrderRegister({
         </div>
       </div>
 
-      {/* 3. Orders Table */}
-      <div className="overflow-x-auto border border-[#383e41] bg-[#17191b]">
+      {/* 3. Orders Table (Desktop) & Cards (Mobile) */}
+      <div className="border border-[#383e41] bg-[#17191b]">
         {loading ? (
           <div className="p-8 text-center text-[#929a9c]">
-            Загрузка списка заказов из базы данных...
+            Загрузка списка заказов...
           </div>
         ) : orders.length === 0 ? (
           <div className="p-8 text-center text-[#929a9c]">
             Заказов по заданным критериям не найдено.
           </div>
         ) : (
-          <table className="w-full text-left text-xs">
-            <thead className="border-b border-[#383e41] bg-[#202325] text-[10px] font-bold uppercase tracking-wider text-[#929a9c]">
-              <tr>
-                <th className="px-3 py-2.5">Заказ</th>
-                <th className="px-3 py-2.5">Дата</th>
-                <th className="px-3 py-2.5">Покупатель</th>
-                <th className="px-3 py-2.5">Позиции</th>
-                <th className="px-3 py-2.5 text-right">Сумма</th>
-                <th className="px-3 py-2.5">Статус</th>
-                <th className="px-3 py-2.5">Оплата</th>
-                <th className="px-3 py-2.5">Доставка</th>
-                <th className="px-3 py-2.5 text-right">Действие</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#2a2f32]">
+          <>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-[#383e41] bg-[#202325] text-[10px] font-bold uppercase tracking-wider text-[#929a9c]">
+                  <tr>
+                    <th className="px-3 py-2.5">Заказ</th>
+                    <th className="px-3 py-2.5">Дата</th>
+                    <th className="px-3 py-2.5">Покупатель</th>
+                    <th className="px-3 py-2.5">Позиции</th>
+                    <th className="px-3 py-2.5 text-right">Сумма</th>
+                    <th className="px-3 py-2.5">Статус</th>
+                    <th className="px-3 py-2.5">Оплата</th>
+                    <th className="px-3 py-2.5">Доставка</th>
+                    <th className="px-3 py-2.5 text-right">Действие</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#2a2f32]">
+                  {orders.map((order) => {
+                    const sBadge = statusBadgeStyles[order.status] ?? statusBadgeStyles.NEW;
+                    const pBadge = paymentBadgeStyles[order.paymentStatus] ?? paymentBadgeStyles.PENDING;
+                    const dBadge = deliveryBadgeStyles[order.deliveryStatus] ?? deliveryBadgeStyles.PENDING;
+                    const grandTotalNum = Number(order.grandTotal) || 0;
+                    const firstShipment = order.shipments[0];
+
+                    return (
+                      <tr
+                        key={order.id}
+                        className="cursor-pointer transition-colors hover:bg-[#202326]"
+                        onClick={() => onSelectOrder(order.id)}
+                      >
+                        <td className="px-3 py-3">
+                          <div className="font-mono font-bold text-[#f1f0eb]">{order.orderNumber}</div>
+                          {order.requestNumber && (
+                            <div className="mt-0.5 text-[10px] text-[#ff865c]">← {order.requestNumber}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-[11px] tabular-nums text-[#aeb5b6]">
+                          {new Date(order.createdAt).toLocaleDateString("ru-RU", {
+                            day: "2-digit",
+                            month: "2-digit",
+                            year: "numeric",
+                          })}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="font-bold text-[#f1f0eb]">{order.customerName}</div>
+                          <div className="text-[10px] tabular-nums text-[#888b8d]">{order.customerPhone}</div>
+                          {firstShipment?.city && (
+                            <div className="text-[10px] text-[#747d80]">г. {firstShipment.city}</div>
+                          )}
+                        </td>
+                        <td className="px-3 py-3">
+                          <div className="text-[11px] font-semibold text-[#f1f0eb]">
+                            {order.items.length}{" "}
+                            {order.items.length === 1 ? "деталь" : order.items.length < 5 ? "детали" : "деталей"}
+                          </div>
+                          <div className="truncate text-[10px] text-[#888b8d]" style={{ maxWidth: 220 }}>
+                            {order.items.map((i) => i.nameOnPurchase).join(", ")}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <div className="font-mono text-sm font-bold tabular-nums text-[#ff6428]">
+                            {grandTotalNum.toLocaleString("ru-RU")} ₽
+                          </div>
+                          <div className="text-[9px] tabular-nums text-[#888b8d]">
+                            лог.: {Number(order.logisticsTotal).toLocaleString("ru-RU")} ₽
+                          </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className={`inline-block border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${sBadge.bg} ${sBadge.text}`}>
+                            {sBadge.label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className={`inline-block border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${pBadge.bg} ${pBadge.text}`}>
+                            {pBadge.label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className={`inline-block border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${dBadge.bg} ${dBadge.text}`}>
+                            {dBadge.label}
+                          </span>
+                          {firstShipment?.trackingNumber && (
+                            <div className="mt-0.5 font-mono text-[9px] text-[#888b8d]">
+                              #{firstShipment.trackingNumber}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectOrder(order.id);
+                            }}
+                            className="min-h-8 border border-[#4b5255] bg-[#222528] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#f1f0eb] transition-colors hover:border-[#ff6428] hover:text-[#ff6428]"
+                          >
+                            Открыть →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Order Cards */}
+            <div className="grid gap-2.5 p-3 sm:grid-cols-2 lg:hidden">
               {orders.map((order) => {
                 const sBadge = statusBadgeStyles[order.status] ?? statusBadgeStyles.NEW;
                 const pBadge = paymentBadgeStyles[order.paymentStatus] ?? paymentBadgeStyles.PENDING;
                 const dBadge = deliveryBadgeStyles[order.deliveryStatus] ?? deliveryBadgeStyles.PENDING;
                 const grandTotalNum = Number(order.grandTotal) || 0;
-
                 const firstShipment = order.shipments[0];
 
                 return (
-                  <tr
+                  <article
                     key={order.id}
-                    className="cursor-pointer transition-colors hover:bg-[#202326]"
                     onClick={() => onSelectOrder(order.id)}
+                    className="flex flex-col justify-between gap-3 border border-[#383e41] bg-[#1e2124] p-3.5 transition hover:border-[#ff6428]"
                   >
-                    {/* Order Number & Originating Request */}
-                    <td className="px-3 py-3">
-                      <div className="font-mono font-bold text-[#f1f0eb]">
-                        {order.orderNumber}
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="font-mono text-sm font-bold text-[#f1f0eb]">{order.orderNumber}</p>
+                        {order.requestNumber && (
+                          <p className="text-[10px] text-[#ff865c]">← {order.requestNumber}</p>
+                        )}
                       </div>
-                      {order.requestNumber && (
-                        <div className="mt-0.5 text-[10px] text-[#ff865c]">
-                          ← {order.requestNumber}
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Date */}
-                    <td className="px-3 py-3 text-[11px] text-[#aeb5b6]">
-                      {new Date(order.createdAt).toLocaleDateString("ru-RU", {
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                      })}
-                    </td>
-
-                    {/* Customer */}
-                    <td className="px-3 py-3">
-                      <div className="font-bold text-[#f1f0eb]">{order.customerName}</div>
-                      <div className="text-[10px] text-[#888b8d]">{order.customerPhone}</div>
-                      {firstShipment?.city && (
-                        <div className="text-[10px] text-[#747d80]">г. {firstShipment.city}</div>
-                      )}
-                    </td>
-
-                    {/* Items snippet */}
-                    <td className="px-3 py-3">
-                      <div className="text-[11px] font-semibold text-[#f1f0eb]">
-                        {order.items.length}{" "}
-                        {order.items.length === 1
-                          ? "деталь"
-                          : order.items.length < 5
-                          ? "детали"
-                          : "деталей"}
+                      <div className="text-right">
+                        <p className="font-mono text-sm font-extrabold tabular-nums text-[#ff6428]">
+                          {grandTotalNum.toLocaleString("ru-RU")} ₽
+                        </p>
+                        <p className="text-[10px] tabular-nums text-[#888b8d]">
+                          {new Date(order.createdAt).toLocaleDateString("ru-RU")}
+                        </p>
                       </div>
-                      <div className="truncate text-[10px] text-[#888b8d]" style={{ maxWidth: 220 }}>
-                        {order.items.map((i) => i.nameOnPurchase).join(", ")}
-                      </div>
-                    </td>
+                    </div>
 
-                    {/* Total Amount */}
-                    <td className="px-3 py-3 text-right">
-                      <div className="font-mono text-sm font-bold text-[#ff6428]">
-                        {grandTotalNum.toLocaleString("ru-RU")} ₽
-                      </div>
-                      <div className="text-[9px] text-[#888b8d]">
-                        лог.: {Number(order.logisticsTotal).toLocaleString("ru-RU")} ₽
-                      </div>
-                    </td>
+                    <div className="border-t border-[#343a3d] pt-2.5 text-xs">
+                      <p className="font-semibold text-[#f1f0eb]">{order.customerName}</p>
+                      <p className="mt-0.5 text-[11px] tabular-nums text-[#aeb5b6]">
+                        {order.customerPhone}
+                        {firstShipment?.city ? ` · г. ${firstShipment.city}` : ""}
+                      </p>
+                      <p className="mt-1.5 line-clamp-1 text-[11px] text-[#888b8d]">
+                        {order.items.length} поз.: {order.items.map((i) => i.nameOnPurchase).join(", ")}
+                      </p>
+                    </div>
 
-                    {/* Order Status */}
-                    <td className="px-3 py-3">
-                      <span
-                        className={`inline-block border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${sBadge.bg} ${sBadge.text}`}
-                      >
+                    <div className="flex flex-wrap items-center gap-1.5 border-t border-[#343a3d] pt-2.5">
+                      <span className={`border px-2 py-0.5 text-[9px] font-bold uppercase ${sBadge.bg} ${sBadge.text}`}>
                         {sBadge.label}
                       </span>
-                    </td>
-
-                    {/* Payment Status */}
-                    <td className="px-3 py-3">
-                      <span
-                        className={`inline-block border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${pBadge.bg} ${pBadge.text}`}
-                      >
+                      <span className={`border px-2 py-0.5 text-[9px] font-bold uppercase ${pBadge.bg} ${pBadge.text}`}>
                         {pBadge.label}
                       </span>
-                    </td>
-
-                    {/* Delivery Status */}
-                    <td className="px-3 py-3">
-                      <span
-                        className={`inline-block border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${dBadge.bg} ${dBadge.text}`}
-                      >
+                      <span className={`border px-2 py-0.5 text-[9px] font-bold uppercase ${dBadge.bg} ${dBadge.text}`}>
                         {dBadge.label}
                       </span>
-                      {firstShipment?.trackingNumber && (
-                        <div className="mt-0.5 font-mono text-[9px] text-[#888b8d]">
-                          #{firstShipment.trackingNumber}
-                        </div>
-                      )}
-                    </td>
-
-                    {/* Action */}
-                    <td className="px-3 py-3 text-right">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectOrder(order.id);
-                        }}
-                        className="border border-[#4b5255] bg-[#222528] px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#f1f0eb] transition-colors hover:border-[#ff6428] hover:text-[#ff6428]"
-                      >
-                        Открыть →
-                      </button>
-                    </td>
-                  </tr>
+                    </div>
+                  </article>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
       </div>
     </div>

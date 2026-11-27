@@ -174,11 +174,17 @@ async function runTests() {
   // Clean up any test vehicle with test VIN
   await prisma.customerVehicle.deleteMany({ where: { vin: "XTA218070R0123456" } });
 
-  // Customer session for +79874023545
+  const testPhone = process.env.QA_TEST_PHONE?.trim() || "+79990000001";
+  const testOtpCode = process.env.PHONE_AUTH_TEST_OTP_CODE?.trim();
+  if (!testOtpCode) {
+    throw new Error("Set PHONE_AUTH_TEST_OTP_CODE (and QA_TEST_PHONE / PHONE_AUTH_TEST_PHONES) to run OTP login.");
+  }
+
+  // Customer session for test phone
   const customerUser = await prisma.user.findFirst({
-    where: { phoneNumber: "+79874023545", role: "CUSTOMER" },
+    where: { phoneNumber: testPhone, role: "CUSTOMER" },
   });
-  assert.ok(customerUser, "Customer user +79874023545 must exist in db");
+  assert.ok(customerUser, `Customer user ${testPhone} must exist in db`);
 
   let custSession = await prisma.session.findFirst({
     where: { userId: customerUser.id, expiresAt: { gt: new Date() } },
@@ -247,12 +253,12 @@ async function runTests() {
         await fetch("/api/customer/auth/phone/send-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: "+79874023545" })
+          body: JSON.stringify({ phone: ${JSON.stringify(testPhone)} })
         });
         const res = await fetch("/api/customer/auth/phone/verify-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: "+79874023545", code: "111111" })
+          body: JSON.stringify({ phone: ${JSON.stringify(testPhone)}, code: ${JSON.stringify(testOtpCode)} })
         });
         return await res.json();
       })()

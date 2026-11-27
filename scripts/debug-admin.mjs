@@ -65,13 +65,19 @@ async function test() {
   const curUrl = await send("Runtime.evaluate", { expression: "window.location.href", returnByValue: true });
   console.log("Current URL:", curUrl);
 
+  const adminEmail = process.env.ZAPTUT_ADMIN_EMAIL?.trim();
+  const adminPassword = process.env.ZAPTUT_ADMIN_PASSWORD;
+  if (!adminEmail || !adminPassword) {
+    throw new Error("Set ZAPTUT_ADMIN_EMAIL and ZAPTUT_ADMIN_PASSWORD in environment.");
+  }
+
   console.log("Submitting sign-in...");
   const authRes = await send("Runtime.evaluate", {
     expression: `(async () => {
       const res = await fetch("/api/auth/sign-in/email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: "mr.artursabirov@gmail.com", password: "Duraki88!Duraki88!" })
+        body: JSON.stringify({ email: ${JSON.stringify(adminEmail)}, password: ${JSON.stringify(adminPassword)} })
       });
       const data = await res.json().catch(() => null);
       return { status: res.status, ok: res.ok, data };

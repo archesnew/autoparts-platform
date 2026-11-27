@@ -6,8 +6,16 @@ import { useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { BrandLogo } from "@/components/brand/brand-logo";
 import { BrandLoader } from "@/components/brand/brand-loader";
+import { IconCart } from "@/components/ui/icons";
 import type { PublicOfferDto, PublicProductDto } from "@/lib/server/catalog-types";
 import { CatalogCartDrawer } from "@/components/catalog/catalog-cart-drawer";
+import {
+  DualModeVehicleFilter,
+  emptyVehicleFilterSelection,
+  YEAR_SEMANTIC_SHORT,
+  type VehicleFilterSelection,
+} from "@/components/catalog/dual-mode-vehicle-filter";
+import { BODY_TYPE_LABELS, type BodyType } from "@/lib/garage/vehicle-visual-registry";
 import { CartItem, loadCartFromStorage, saveCartToStorage, clearCartStorage } from "@/lib/catalog-cart";
 
 type Part = {
@@ -164,16 +172,119 @@ const demoParts: Part[] = [
   },
 ];
 
-const emptyFilters = { make: "", model: "", year: "", brand: "", condition: "", country: "", availability: "" };
+const emptyFilters = {
+  make: "",
+  model: "",
+  year: "",
+  brand: "",
+  condition: "",
+  country: "",
+  availability: "",
+  minPrice: "",
+  maxPrice: "",
+  sortBy: "relevance",
+};
 const modes = ["VIN", "OEM", "Название"] as const;
 type Mode = (typeof modes)[number];
+
+const VEHICLE_STORAGE_KEY = "zaptut_catalog_vehicle_v1";
+
+function formatVehicleSummary(sel: VehicleFilterSelection): string {
+  const parts: string[] = [];
+  if (sel.make) parts.push(sel.make);
+  if (sel.model) parts.push(sel.model);
+  if (sel.generation) parts.push(sel.generation);
+  if (sel.year) {
+    const sem = sel.yearSemantics ? YEAR_SEMANTIC_SHORT[sel.yearSemantics] : "";
+    parts.push(sem ? `${sel.year} (${sem})` : sel.year);
+  }
+  if (sel.bodyType) parts.push(BODY_TYPE_LABELS[sel.bodyType as BodyType] || sel.bodyType);
+  if (sel.engine) parts.push(sel.engine);
+  if (sel.modification) parts.push(sel.modification);
+  return parts.join(" · ");
+}
 
 function CatalogContent() {
   const searchParams = useSearchParams();
   const initialQ = searchParams.get("q") ?? "";
+  const urlMake = searchParams.get("make") ?? "";
+  const urlModel = searchParams.get("model") ?? "";
+  const urlYear = searchParams.get("year") ?? "";
+
   const [mode, setMode] = useState<Mode>("VIN");
   const [query, setQuery] = useState(initialQ);
-  const [filters, setFilters] = useState(emptyFilters);
+  const [vehicleSelection, setVehicleSelection] = useState<VehicleFilterSelection>(() => ({
+    ...emptyVehicleFilterSelection,
+    make: urlMake,
+    model: urlModel,
+    year: urlYear,
+  }));
+  const [isVehicleLoaded, setIsVehicleLoaded] = useState(false);
+  // Switch: OFF by default so selecting a vehicle does NOT hide the catalog assortment
+  const [fitmentOnly, setFitmentOnly] = useState(false);
+  const vehicleAsideRef = useRef<HTMLDivElement>(null);
+
+  const [filters, setFilters] = useState(() => ({
+    ...emptyFilters,
+    make: urlMake,
+    model: urlModel,
+    year: urlYear,
+  }));
+
+  // Restore saved vehicle context from localStorage when no URL vehicle override is present
+  useEffect(() => {
+    try {
+      if (!urlMake) {
+        const raw = window.localStorage.getItem(VEHICLE_STORAGE_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw) as {
+            vehicle?: VehicleFilterSelection;
+            fitmentOnly?: boolean;
+          };
+          if (parsed?.vehicle?.make) {
+            setVehicleSelection({ ...emptyVehicleFilterSelection, ...parsed.vehicle });
+            setFilters((cur) => ({
+              ...cur,
+              make: parsed.vehicle!.make || "",
+              model: parsed.vehicle!.model || "",
+              year: parsed.vehicle!.year || "",
+            }));
+            if (typeof parsed.fitmentOnly === "boolean") {
+              setFitmentOnly(parsed.fitmentOnly);
+            }
+          }
+        }
+      }
+    } catch {}
+    setIsVehicleLoaded(true);
+  }, [urlMake]);
+
+  useEffect(() => {
+    if (!isVehicleLoaded) return;
+    try {
+      if (vehicleSelection.make) {
+        window.localStorage.setItem(
+          VEHICLE_STORAGE_KEY,
+          JSON.stringify({ vehicle: vehicleSelection, fitmentOnly })
+        );
+      } else {
+        window.localStorage.removeItem(VEHICLE_STORAGE_KEY);
+      }
+    } catch {}
+  }, [vehicleSelection, fitmentOnly, isVehicleLoaded]);
+
+  function handleVehicleChange(next: VehicleFilterSelection) {
+    setVehicleSelection(next);
+    setFilters((current) => ({
+      ...current,
+      make: next.make,
+      model: next.model,
+      year: next.year,
+    }));
+    if (!next.make) {
+      setFitmentOnly(false);
+    }
+  }
   const [category, setCategory] = useState("");
   const [selected, setSelected] = useState<Part | null>(null);
   const [requestPart, setRequestPart] = useState<Part | null>(null);
@@ -264,10 +375,14 @@ function CatalogContent() {
     if (filters.make) params.set("make", filters.make);
     if (filters.model) params.set("model", filters.model);
     if (filters.year) params.set("year", filters.year);
+    if (fitmentOnly && filters.make) params.set("fitmentOnly", "true");
     if (filters.brand) params.set("brand", filters.brand);
     if (filters.condition) params.set("condition", filters.condition);
     if (filters.country) params.set("country", filters.country);
     if (filters.availability) params.set("availability", filters.availability);
+    if (filters.minPrice) params.set("minPrice", filters.minPrice);
+    if (filters.maxPrice) params.set("maxPrice", filters.maxPrice);
+    if (filters.sortBy && filters.sortBy !== "relevance") params.set("sortBy", filters.sortBy);
 
     setLoading(true);
     fetch(`/api/catalog?${params.toString()}`)
@@ -311,29 +426,50 @@ function CatalogContent() {
     return () => {
       active = false;
     };
-  }, [query, category, filters]);
+  }, [query, category, filters, fitmentOnly]);
 
   const fallbackFiltered = useMemo(() => {
-    return demoParts.filter((part) => {
+    let result = demoParts.filter((part) => {
       const q = query.trim().toLocaleLowerCase("ru");
       const haystack = `${part.title} ${part.oem} ${part.brand} ${part.make} ${part.model} ${part.category}`.toLocaleLowerCase("ru");
+      const minP = filters.minPrice ? parseInt(filters.minPrice, 10) : null;
+      const maxP = filters.maxPrice ? parseInt(filters.maxPrice, 10) : null;
+
       return (
         (!q || haystack.includes(q)) &&
         (!category || part.category === category) &&
-        (!filters.make || part.make === filters.make) &&
-        (!filters.model || part.model === filters.model) &&
-        (!filters.year || part.year.includes(filters.year)) &&
+        (!fitmentOnly || !filters.make || part.make === filters.make) &&
+        (!fitmentOnly || !filters.model || part.model === filters.model) &&
+        (!fitmentOnly || !filters.year || part.year.includes(filters.year)) &&
         (!filters.brand || part.brand === filters.brand) &&
         (!filters.condition || part.condition === filters.condition) &&
         (!filters.country || part.country === filters.country) &&
         (!filters.availability ||
           (filters.availability === "IN_STOCK" && part.badge !== "ARCHIVED_SOLD") ||
-          (filters.availability === "ARCHIVED_SOLD" && part.badge === "ARCHIVED_SOLD"))
+          (filters.availability === "ARCHIVED_SOLD" && part.badge === "ARCHIVED_SOLD")) &&
+        (minP === null || (part.price !== null && part.price >= minP)) &&
+        (maxP === null || (part.price !== null && part.price <= maxP))
       );
     });
+
+    if (filters.sortBy === "price_asc") {
+      result.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+    } else if (filters.sortBy === "price_desc") {
+      result.sort((a, b) => (b.price ?? -1) - (a.price ?? -1));
+    }
+
+    return result;
   }, [query, category, filters]);
 
   const filtered = dbItems !== null ? dbItems : fallbackFiltered;
+
+  function resetAllFilters() {
+    setQuery("");
+    setCategory("");
+    setFilters(emptyFilters);
+    setVehicleSelection(emptyVehicleFilterSelection);
+    setFitmentOnly(false);
+  }
 
   function setFilter(key: keyof typeof emptyFilters, value: string) {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -371,27 +507,27 @@ function CatalogContent() {
     <main className="min-h-screen bg-[#17191b] text-[#f1f0eb]">
       {/* Header */}
       <header className="border-b border-[#383e41] bg-[#17191b]">
-        <div className="container flex min-h-[74px] items-center justify-between gap-3">
-          <Link href="/" aria-label="ZAPTUT.PRO — на главную" className="block w-[142px] shrink-0 sm:w-[210px]">
-            <BrandLogo variant="dark" className="w-full" priority sizes="(max-width: 640px) 142px, 210px" />
+        <div className="container flex min-h-[72px] items-center justify-between gap-2 sm:min-h-[74px] sm:gap-3">
+          <Link href="/" aria-label="ZAPTUT.PRO — на главную" className="block w-[116px] shrink-0 sm:w-[210px]">
+            <BrandLogo variant="dark" className="w-full" priority sizes="(max-width: 640px) 116px, 210px" />
           </Link>
           <nav aria-label="Основная навигация" className="hidden gap-6 text-sm font-medium text-[#888b8d] lg:flex">
             <Link href="/catalog" className="text-[#f1f0eb]">Каталог</Link>
             <Link href="/#how" className="transition hover:text-[#f1f0eb]">Как это работает</Link>
-            <Link href="/#suppliers" className="transition hover:text-[#f1f0eb]">Поставщикам</Link>
-            <Link href="/#about" className="transition hover:text-[#f1f0eb]">О платформе</Link>
+            <Link href="/delivery-info" className="transition hover:text-[#f1f0eb]">Доставка</Link>
+            <Link href="/about" className="transition hover:text-[#f1f0eb]">О платформе</Link>
           </nav>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <button
               id="cart-drawer-toggle"
               onClick={() => setIsCartOpen(true)}
-              className={`flex items-center gap-2 border px-3 py-2 text-xs font-bold uppercase tracking-wider transition ${
+              className={`flex min-h-10 items-center gap-1.5 border px-2.5 py-2 text-[11px] font-bold uppercase tracking-wider transition sm:gap-2 sm:px-3 sm:text-xs ${
                 totalCartCount > 0
                   ? "border-[#ff6428] bg-[#ff6428] text-[#17191b] hover:bg-[#ff7a45]"
                   : "border-[#414749] bg-[#1e2124] text-[#f1f0eb] hover:border-[#ff6428]"
               }`}
             >
-              <span>🛒</span>
+              <IconCart className="h-3.5 w-3.5 shrink-0" />
               <span>Заявка</span>
               {totalCartCount > 0 && (
                 <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[#17191b] px-1 text-[10px] font-black text-[#ff865c]">
@@ -530,7 +666,18 @@ function CatalogContent() {
       </section>
 
       {/* Main Catalog View: Filters & Grid */}
-      <section className="container grid gap-7 pb-16 lg:grid-cols-[250px_1fr]">
+      <section className="container pb-16">
+        {/* Subtle Staging Preview Notice */}
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2 border border-[#383e41] bg-[#1e2124] px-4 py-2.5 text-xs text-[#aeb5b6]">
+          <span>
+            <strong className="text-[#f1f0eb]">Демо-режим каталога:</strong> цены ориентировочные по тарифам РФ, Беларуси и Польши; наличие подтверждается менеджером по заявке.
+          </span>
+          <span className="shrink-0 border border-[#414749] bg-[#17191b] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-[#ff865c]">
+            Демо-стенд
+          </span>
+        </div>
+
+        <div className="grid gap-7 lg:grid-cols-[276px_1fr]">
         <aside className="h-fit border border-[#383e41] bg-[#1e2124] p-5">
           <div className="mb-5 flex items-center justify-between border-b border-[#383e41] pb-3">
             <h2 className="text-xs font-black uppercase tracking-wider text-[#f1f0eb]">Фильтры</h2>
@@ -538,6 +685,8 @@ function CatalogContent() {
               className="text-xs font-bold uppercase tracking-wider text-[#ff6428] transition hover:text-[#f1f0eb]"
               onClick={() => {
                 setFilters(emptyFilters);
+                setVehicleSelection(emptyVehicleFilterSelection);
+                setFitmentOnly(false);
                 setCategory("");
               }}
             >
@@ -545,31 +694,12 @@ function CatalogContent() {
             </button>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-            <label className="text-[10px] font-bold uppercase tracking-wider text-[#888b8d]">
-              Марка автомобиля
-              <select className={selectClass} value={filters.make} onChange={(e) => setFilter("make", e.target.value)}>
-                <option value="">Любая марка</option>
-                <option>Kia</option>
-                <option>Hyundai</option>
-              </select>
-            </label>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-[#888b8d]">
-              Модель
-              <select className={selectClass} value={filters.model} onChange={(e) => setFilter("model", e.target.value)}>
-                <option value="">Любая модель</option>
-                <option>Sportage</option>
-                <option>Tucson</option>
-              </select>
-            </label>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-[#888b8d]">
-              Год выпуска
-              <select className={selectClass} value={filters.year} onChange={(e) => setFilter("year", e.target.value)}>
-                <option value="">Любой год</option>
-                {["2018", "2019", "2020", "2021", "2022", "2023", "2024", "2025"].map((y) => (
-                  <option key={y}>{y}</option>
-                ))}
-              </select>
-            </label>
+            <div ref={vehicleAsideRef} className="sm:col-span-2 lg:col-span-1 border-b border-[#343a3d] pb-4">
+              <p className="mb-3 text-[10px] font-extrabold uppercase tracking-[.16em] text-[#ff865c]">
+                Подбор по автомобилю
+              </p>
+              <DualModeVehicleFilter value={vehicleSelection} onChange={handleVehicleChange} />
+            </div>
             <label className="text-[10px] font-bold uppercase tracking-wider text-[#888b8d]">
               Производитель
               <select className={selectClass} value={filters.brand} onChange={(e) => setFilter("brand", e.target.value)}>
@@ -597,6 +727,34 @@ function CatalogContent() {
               </select>
             </label>
             <label className="text-[10px] font-bold uppercase tracking-wider text-[#888b8d]">
+              Сортировка
+              <select className={selectClass} value={filters.sortBy} onChange={(e) => setFilter("sortBy", e.target.value)}>
+                <option value="relevance">По релевантности</option>
+                <option value="price_asc">Сначала дешевле</option>
+                <option value="price_desc">Сначала дороже</option>
+                <option value="newest">Новые поступления</option>
+              </select>
+            </label>
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-[#888b8d]">Цена, ₽</span>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  placeholder="от"
+                  value={filters.minPrice}
+                  onChange={(e) => setFilter("minPrice", e.target.value)}
+                  className="w-full border border-[#414749] bg-[#17191b] px-2.5 py-2 text-xs font-semibold text-[#f1f0eb] outline-none focus:border-[#ff6428]"
+                />
+                <input
+                  type="number"
+                  placeholder="до"
+                  value={filters.maxPrice}
+                  onChange={(e) => setFilter("maxPrice", e.target.value)}
+                  className="w-full border border-[#414749] bg-[#17191b] px-2.5 py-2 text-xs font-semibold text-[#f1f0eb] outline-none focus:border-[#ff6428]"
+                />
+              </div>
+            </div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-[#888b8d]">
               Наличие и архив
               <select className={selectClass} value={filters.availability} onChange={(e) => setFilter("availability", e.target.value)}>
                 <option value="">Все товары (включая архив)</option>
@@ -604,10 +762,90 @@ function CatalogContent() {
                 <option value="ARCHIVED_SOLD">Вечный архив (ARCHIVED_SOLD)</option>
               </select>
             </label>
+            <button
+              type="button"
+              onClick={resetAllFilters}
+              className="mt-2 w-full border border-[#414749] py-2 text-center text-xs font-bold uppercase tracking-wider text-[#888b8d] transition hover:border-[#ff6428] hover:text-[#f1f0eb]"
+            >
+              Сбросить фильтры ↺
+            </button>
           </div>
         </aside>
 
         <div>
+          {/* Compact Selected Vehicle Context Bar */}
+          {vehicleSelection.make && (
+            <div
+              data-testid="selected-vehicle-bar"
+              className="mb-5 flex flex-col gap-3 border border-[#383e41] bg-[#1e2124] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-extrabold uppercase tracking-[.18em] text-[#ff6428]">
+                    Выбранный автомобиль
+                  </span>
+                  {vehicleSelection.year && vehicleSelection.yearSemantics && YEAR_SEMANTIC_SHORT[vehicleSelection.yearSemantics] && (
+                    <span className="border border-[#414749] bg-[#17191b] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#aeb5b6]">
+                      {YEAR_SEMANTIC_SHORT[vehicleSelection.yearSemantics]}
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 truncate text-sm font-black text-[#f1f0eb]">
+                  {formatVehicleSummary(vehicleSelection)}
+                </p>
+                <p className="mt-0.5 text-[11px] text-[#888b8d]">
+                  {fitmentOnly
+                    ? "Включён фильтр подтверждённой применимости (CONFIRMED)."
+                    : "Показан весь ассортимент · поиск открыт, авто сохранено для заявки."}
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2.5 sm:items-end shrink-0">
+                <label
+                  data-testid="fitment-only-toggle"
+                  className="inline-flex cursor-pointer items-center gap-2.5 select-none border border-[#414749] bg-[#17191b] px-3 py-2 text-xs transition hover:border-[#ff6428]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={fitmentOnly}
+                    onChange={(e) => setFitmentOnly(e.target.checked)}
+                    className="h-4 w-4 accent-[#ff6428]"
+                  />
+                  <span className="font-bold text-[#f1f0eb]">
+                    Только запчасти, подходящие моему автомобилю
+                  </span>
+                </label>
+
+                <div className="flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      vehicleAsideRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      const inp = vehicleAsideRef.current?.querySelector("input");
+                      inp?.focus();
+                    }}
+                    className="text-[#aeb5b6] transition hover:text-[#f1f0eb]"
+                  >
+                    Сменить авто
+                  </button>
+                  <span className="text-[#414749]">·</span>
+                  <button
+                    type="button"
+                    data-testid="clear-selected-vehicle"
+                    onClick={() => {
+                      setVehicleSelection(emptyVehicleFilterSelection);
+                      setFitmentOnly(false);
+                      setFilters((cur) => ({ ...cur, make: "", model: "", year: "" }));
+                    }}
+                    className="text-[#ff6428] transition hover:text-[#f1f0eb]"
+                  >
+                    Очистить ×
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-[#383e41] pb-4">
             <div>
               <p className="text-[10px] font-extrabold uppercase tracking-[.2em] text-[#ff6428]">
@@ -641,21 +879,24 @@ function CatalogContent() {
                       sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 350px"
                       className="object-cover object-center transition duration-300 group-hover:scale-[1.03]"
                     />
-                    <span className="absolute left-3 top-3 border border-[#ff6428]/40 bg-[#17191b]/95 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-[#ff986f]">
-                      Каталог
-                    </span>
                     <span
                       className={`absolute right-3 top-3 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider ${
                         part.badge === "ARCHIVED_SOLD"
                           ? "border border-[#ff6428]/80 bg-[#17191b] text-[#ff986f]"
                           : part.badge === "USED"
-                          ? "border border-[#888b8d] bg-[#17191b] text-[#888b8d]"
+                          ? "border border-[#888b8d] bg-[#17191b] text-[#aeb5b6]"
                           : part.badge === "ANALOG"
                           ? "border border-[#888b8d] bg-[#222629] text-[#f1f0eb]"
                           : "bg-[#ff6428] text-[#17191b]"
                       }`}
                     >
-                      {part.badge === "ARCHIVED_SOLD" ? "АРХИВ · ПРОДАНО" : part.badge}
+                      {part.badge === "ARCHIVED_SOLD"
+                        ? "АРХИВ · ПРОДАНО"
+                        : part.badge === "USED"
+                        ? "Б/У"
+                        : part.badge === "ANALOG"
+                        ? "АНАЛОГ"
+                        : "ОРИГИНАЛ"}
                     </span>
                   </button>
 
@@ -729,13 +970,48 @@ function CatalogContent() {
               ))}
             </div>
           ) : (
-            <div className="border border-dashed border-[#414749] bg-[#1e2124] px-6 py-12 text-center">
-              <p className="text-base font-bold text-[#f1f0eb]">По заданным фильтрам совпадений не найдено</p>
-              <p className="mt-2 text-xs text-[#888b8d]">Измените параметры поиска или отправьте запрос менеджеру.</p>
+            <div data-testid="catalog-empty-state" className="border border-dashed border-[#414749] bg-[#1e2124] px-6 py-12 text-center">
+              <p className="text-base font-bold text-[#f1f0eb]">
+                {fitmentOnly && vehicleSelection.make
+                  ? `Подтверждённых запчастей для ${vehicleSelection.make}${vehicleSelection.model ? ` ${vehicleSelection.model}` : ""} в быстром наличии пока нет`
+                  : "По заданным фильтрам совпадений не найдено"}
+              </p>
+              <p className="mt-2 mx-auto max-w-lg text-xs text-[#888b8d]">
+                {fitmentOnly && vehicleSelection.make
+                  ? "Переключатель совместимости показывает только детали с подтверждённой применимостью (CONFIRMED). Вы можете показать весь ассортимент каталога или отправить заявку на индивидуальный подбор — менеджер найдёт деталь под ваш автомобиль."
+                  : "Попробуйте изменить поисковый запрос, артикул или сбросить фильтры."}
+              </p>
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
+                {fitmentOnly && (
+                  <button
+                    type="button"
+                    data-testid="disable-fitment-only-btn"
+                    onClick={() => setFitmentOnly(false)}
+                    className="border border-[#ff6428]/70 bg-[#17191b] px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-[#ff865c] transition hover:border-[#ff6428] hover:text-[#f1f0eb]"
+                  >
+                    Показать весь каталог
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={resetAllFilters}
+                  className="border border-[#414749] bg-[#17191b] px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-[#f1f0eb] transition hover:border-[#ff6428]"
+                >
+                  Сбросить фильтры ↺
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openRequest(null)}
+                  className="bg-[#ff6428] px-5 py-2.5 text-xs font-extrabold uppercase tracking-wider text-[#17191b] transition hover:bg-[#ff8050]"
+                >
+                  Оставить заявку на подбор →
+                </button>
+              </div>
             </div>
           )}
         </div>
-      </section>
+      </div>
+    </section>
 
       {/* Direct Intake Banner */}
       <section className="border-y border-[#383e41] bg-[#1e2124] py-10">
@@ -912,11 +1188,38 @@ function CatalogContent() {
                   </label>
                   <label className="text-[10px] font-bold uppercase tracking-wider text-[#888b8d]">
                     Комментарий
-                    <textarea className={`${selectClass} min-h-24 resize-y`} placeholder="Автомобиль, VIN, требования по детали" />
+                    <textarea
+                      className={`${selectClass} min-h-24 resize-y`}
+                      defaultValue={
+                        vehicleSelection.make
+                          ? `Автомобиль: ${formatVehicleSummary(vehicleSelection)}\nТребуемая деталь: `
+                          : ""
+                      }
+                      placeholder="Автомобиль, VIN, требования по детали"
+                    />
                   </label>
                   <button className="min-h-12 bg-[#ff6428] px-5 text-xs font-black uppercase tracking-wider text-[#17191b] transition hover:bg-[#ff7a45]">
                     Отправить запрос на подбор →
                   </button>
+                  <p className="text-[11px] leading-relaxed text-[#888b8d]">
+                    Нажимая «Отправить запрос», вы соглашаетесь с{" "}
+                    <Link
+                      href="/consent"
+                      target="_blank"
+                      className="text-[#f1f0eb] underline decoration-[#ff6428] underline-offset-2 transition hover:text-[#ff865c]"
+                    >
+                      условиями обработки персональных данных
+                    </Link>{" "}
+                    и{" "}
+                    <Link
+                      href="/privacy-policy"
+                      target="_blank"
+                      className="text-[#f1f0eb] underline decoration-[#ff6428] underline-offset-2 transition hover:text-[#ff865c]"
+                    >
+                      политикой конфиденциальности
+                    </Link>
+                    .
+                  </p>
                 </form>
               </>
             )}
@@ -947,6 +1250,11 @@ function CatalogContent() {
         onUpdateQuantity={handleUpdateQuantity}
         onRemoveItem={handleRemoveItem}
         onClearCart={handleClearCart}
+        defaultVehicle={{
+          make: vehicleSelection.make,
+          model: vehicleSelection.model,
+          year: vehicleSelection.year,
+        }}
       />
 
       {/* Footer */}
@@ -955,7 +1263,18 @@ function CatalogContent() {
           <Link href="/" aria-label="ZAPTUT.PRO — на главную" className="block w-[170px]">
             <BrandLogo variant="dark" className="w-full" sizes="170px" />
           </Link>
-          <span className="text-xs text-[#888b8d]">© 2026 · ZAPTUT.PRO · Международный агрегатор автозапчастей</span>
+          <div className="flex flex-wrap items-center gap-4 text-xs text-[#888b8d]">
+            <span>© 2026 · ZAPTUT.PRO</span>
+            <Link href="/privacy-policy" className="hover:text-[#f1f0eb] transition">
+              Политика конфиденциальности (152-ФЗ)
+            </Link>
+            <Link href="/consent" className="hover:text-[#f1f0eb] transition">
+              Согласие на обработку данных
+            </Link>
+            <Link href="/terms" className="hover:text-[#f1f0eb] transition">
+              Оферта и условия
+            </Link>
+          </div>
           <Link href="/" className="text-xs font-bold uppercase tracking-wider text-[#ff6428] hover:text-[#f1f0eb]">
             На главную ↑
           </Link>

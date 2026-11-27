@@ -123,11 +123,17 @@ class CdpClient {
 async function main() {
   console.log("=== BROWSER QA: VEHICLE SELECTOR & COMPACT ZAPTUT GARAGE ===");
 
-  // 1. Ensure user +79874023545 has active session
+  const testPhone = process.env.QA_TEST_PHONE?.trim() || "+79990000001";
+  const testOtpCode = process.env.PHONE_AUTH_TEST_OTP_CODE?.trim();
+  if (!testOtpCode) {
+    throw new Error("Set PHONE_AUTH_TEST_OTP_CODE (and QA_TEST_PHONE / PHONE_AUTH_TEST_PHONES) to run OTP login.");
+  }
+
+  // 1. Ensure test customer has active session
   const customerUser = await prisma.user.findFirst({
-    where: { phoneNumber: "+79874023545", role: "CUSTOMER" },
+    where: { phoneNumber: testPhone, role: "CUSTOMER" },
   });
-  assert.ok(customerUser, "Customer user +79874023545 must exist in db");
+  assert.ok(customerUser, `Customer user ${testPhone} must exist in db`);
 
   let session = await prisma.session.findFirst({
     where: { userId: customerUser.id, expiresAt: { gt: new Date() } },
@@ -196,9 +202,9 @@ async function main() {
     await cdp.send("Network.enable");
 
     // -------------------------------------------------------------------------
-    // AUTHENTICATE: Sign in via Phone OTP (+79874023545, OTP 111111)
+    // AUTHENTICATE: Sign in via Phone OTP
     // -------------------------------------------------------------------------
-    console.log("\n--- Authenticating Customer (+79874023545) via Phone OTP ---");
+    console.log(`\n--- Authenticating Customer (${testPhone}) via Phone OTP ---`);
     await cdp.navigate("http://localhost:3000/account/login");
 
     const otpResult = await cdp.eval(`
@@ -207,19 +213,19 @@ async function main() {
         await fetch("/api/customer/auth/phone/send-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: "+79874023545" })
+          body: JSON.stringify({ phone: ${JSON.stringify(testPhone)} })
         });
-        // 2. Verify OTP with dev master code
+        // 2. Verify OTP
         const res = await fetch("/api/customer/auth/phone/verify-otp", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone: "+79874023545", code: "111111" })
+          body: JSON.stringify({ phone: ${JSON.stringify(testPhone)}, code: ${JSON.stringify(testOtpCode)} })
         });
         return { status: res.status, ok: res.ok, data: await res.json() };
       })()
     `);
     console.log("Phone Auth OTP verification result:", otpResult);
-    assert.ok(otpResult.ok, "OTP verification must succeed for +79874023545");
+    assert.ok(otpResult.ok, `OTP verification must succeed for ${testPhone}`);
 
     // -------------------------------------------------------------------------
     // TEST 1: Check Customer Dashboard & Compact Zaptut Garage Card

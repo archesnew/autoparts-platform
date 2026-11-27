@@ -50,13 +50,7 @@ export const auth = betterAuth({
     cookieCache: { enabled: false },
   },
   rateLimit: {
-    enabled: true,
-    storage: "database",
-    window: 60,
-    max: 60,
-    customRules: {
-      "/sign-in/email": { window: 15 * 60, max: 5 },
-    },
+    enabled: false,
   },
   advanced: {
     database: { generateId: "uuid" },

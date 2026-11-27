@@ -122,6 +122,12 @@ async function main() {
     });
 
     // 1. Sign in as SuperAdmin via API (clear rate limits first for testing)
+    const adminEmail = process.env.ZAPTUT_ADMIN_EMAIL?.trim();
+    const adminPassword = process.env.ZAPTUT_ADMIN_PASSWORD;
+    if (!adminEmail || !adminPassword) {
+      throw new Error("Set ZAPTUT_ADMIN_EMAIL and ZAPTUT_ADMIN_PASSWORD in environment.");
+    }
+
     console.log("1. Signing in as SuperAdmin...");
     await prisma.rateLimit.deleteMany({});
     await cdp.navigate("http://127.0.0.1:3000/login");
@@ -132,8 +138,8 @@ async function main() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            email: "mr.artursabirov@gmail.com",
-            password: "Duraki88!Duraki88!",
+            email: ${JSON.stringify(adminEmail)},
+            password: ${JSON.stringify(adminPassword)},
           }),
         });
         return { ok: res.ok, status: res.status };
@@ -265,8 +271,8 @@ async function main() {
         el.dispatchEvent(new Event('change', { bubbles: true }));
       };
       if (emailInput && passInput && submitBtn) {
-        setVal(emailInput, 'mr.artursabirov@gmail.com');
-        setVal(passInput, 'Duraki88!Duraki88!');
+        setVal(emailInput, ${JSON.stringify(adminEmail)});
+        setVal(passInput, ${JSON.stringify(adminPassword)});
         submitBtn.click();
       }
     })()`);

@@ -34,6 +34,12 @@ async function run() {
     await send("Page.enable");
     await send("Emulation.setDeviceMetricsOverride", { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
+    const adminEmail = process.env.ZAPTUT_ADMIN_EMAIL?.trim();
+    const adminPassword = process.env.ZAPTUT_ADMIN_PASSWORD;
+    if (!adminEmail || !adminPassword) {
+      throw new Error("Set ZAPTUT_ADMIN_EMAIL and ZAPTUT_ADMIN_PASSWORD in environment.");
+    }
+
     await send("Page.navigate", { url: "http://127.0.0.1:3000/login" });
     await new Promise(r => setTimeout(r, 2000));
 
@@ -42,7 +48,7 @@ async function run() {
         await fetch("/api/auth/sign-in/email", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: "mr.artursabirov@gmail.com", password: "Duraki88!Duraki88!" })
+          body: JSON.stringify({ email: ${JSON.stringify(adminEmail)}, password: ${JSON.stringify(adminPassword)} })
         });
       })()`,
       awaitPromise: true

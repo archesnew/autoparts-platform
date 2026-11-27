@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { customerPhoneAuthService } from "@/lib/server/customer-phone-auth-service";
+import { extractTrustedClientIp } from "@/lib/server/security/rate-limiter";
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,11 +14,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ip =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      req.headers.get("x-real-ip") ||
-      null;
-
+    const ip = extractTrustedClientIp(req.headers);
     const result = await customerPhoneAuthService.sendOtp(rawPhone, ip);
 
     if (!result.success) {
@@ -38,11 +35,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Never expose devOtpCode or any OTP value in HTTP response
     return NextResponse.json({
       success: true,
       cooldownSeconds: result.cooldownSeconds,
       normalizedPhone: result.normalizedPhone,
-      devOtpCode: "devOtpCode" in result ? result.devOtpCode : undefined,
     });
   } catch (err) {
     console.error("SEND_OTP_ROUTE_ERROR:", err);

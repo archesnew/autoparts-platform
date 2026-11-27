@@ -7,6 +7,8 @@ import { normalizePhone } from "@/lib/customer-model";
 import { formatMinorUnits } from "@/lib/financial-config";
 import { Prisma } from "@prisma/client";
 import { orderService } from "./order-service";
+import { notificationService } from "./notification-service";
+import { consumeRateLimitBucket, sha256Hex } from "@/lib/server/security/rate-limiter";
 
 export class CustomerServiceError extends Error {
   readonly status: number;
@@ -128,39 +130,18 @@ export class CustomerPortalService {
         },
       });
 
-      // 3. Find unclaimed Customer record with matching email
-      let customer = await tx.customer.findFirst({
-        where: {
-          userId: null,
-          OR: [
-            { normalizedEmail: cleanEmail },
-            { email: cleanEmail },
-          ],
+      // 3. Create an isolated Customer profile for the new User.
+      // Never auto-link by unverified email or unverified phone during self-registration (prevents takeover).
+      const customer = await tx.customer.create({
+        data: {
+          name: cleanName,
+          email: cleanEmail,
+          normalizedEmail: cleanEmail,
+          phone: params.phone || null,
+          normalizedPhone: normPhone,
+          userId: user.id,
         },
       });
-
-      if (customer) {
-        customer = await tx.customer.update({
-          where: { id: customer.id },
-          data: {
-            userId: user.id,
-            name: customer.name || cleanName,
-            phone: customer.phone || params.phone,
-            normalizedPhone: customer.normalizedPhone || normPhone,
-          },
-        });
-      } else {
-        customer = await tx.customer.create({
-          data: {
-            name: cleanName,
-            email: cleanEmail,
-            normalizedEmail: cleanEmail,
-            phone: params.phone || null,
-            normalizedPhone: normPhone,
-            userId: user.id,
-          },
-        });
-      }
 
       return {
         user: {
@@ -179,52 +160,114 @@ export class CustomerPortalService {
   }
 
   /**
-   * Request password reset token
+   * Request password reset for CUSTOMER accounts.
+   * Security guarantees:
+   * - Never exposes token or resetUrl in the public response
+   * - Always returns an identical generic response regardless of account existence or role
+   * - Explicitly rejects non-CUSTOMER accounts (STAFF / SUPER_ADMIN / DEMO_VIEWER / SUPPLIER)
+   * - Rate-limited atomically in PostgreSQL; stores only SHA-256 token hash with short 15-min TTL
    */
-  async requestPasswordReset(email: string) {
+  async requestPasswordReset(email: string, ip?: string | null) {
     const cleanEmail = email.trim().toLowerCase();
-    const user = await prisma.user.findUnique({
-      where: { email: cleanEmail },
-    });
+    const genericResponse = {
+      success: true,
+      message:
+        "Если учётная запись покупателя найдена и поддерживает восстановление по email, инструкция отправлена. Основной вход и восстановление доступа покупателей ZAPTUT.PRO выполняются по SMS-коду телефона.",
+    };
 
-    // We do not leak whether user exists for security, but generate token if exists
-    if (!user) {
-      return { success: true, message: "Если аккаунт существует, ссылка для сброса пароля отправлена." };
+    if (!cleanEmail || !cleanEmail.includes("@")) {
+      return genericResponse;
     }
 
-    const token = randomBytes(24).toString("hex");
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+    const emailCooldown = await consumeRateLimitBucket({
+      key: `pwd_reset:cd:${sha256Hex(cleanEmail)}`,
+      limit: 1,
+      windowSeconds: 60,
+    });
+    if (!emailCooldown.allowed) {
+      throw new CustomerServiceError(
+        429,
+        `Повторный запрос возможен через ${emailCooldown.retryAfterSeconds} сек.`
+      );
+    }
 
-    await prisma.verification.create({
-      data: {
-        id: randomUUID(),
-        identifier: cleanEmail,
-        value: token,
-        expiresAt,
-      },
+    const ipHourly = await consumeRateLimitBucket({
+      key: `pwd_reset:ip:${sha256Hex(ip?.trim() || "unknown")}`,
+      limit: 10,
+      windowSeconds: 3600,
+    });
+    if (!ipHourly.allowed) {
+      throw new CustomerServiceError(
+        429,
+        "Превышен лимит запросов восстановления пароля. Повторите позже."
+      );
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email: cleanEmail },
+      select: { id: true, role: true, active: true },
     });
 
-    return {
-      success: true,
-      message: "Ссылка для сброса пароля создана.",
-      resetUrl: `/account/reset-password?token=${token}&email=${encodeURIComponent(cleanEmail)}`,
-      token,
-    };
+    // Public customer reset MUST NEVER apply to staff, admins, SUPER_ADMIN, or inactive users
+    if (!user || !user.active || user.role !== "CUSTOMER") {
+      return genericResponse;
+    }
+
+    // Legacy email recovery is disabled when no outbound mail provider is configured,
+    // directing customers cleanly to SMS OTP login without generating unused tokens or leaking URLs.
+    const hasOutboundEmail = Boolean(process.env.RESEND_API_KEY || process.env.SMTP_HOST);
+    if (!hasOutboundEmail) {
+      return genericResponse;
+    }
+
+    const token = randomBytes(32).toString("hex");
+    const tokenHash = sha256Hex(`${cleanEmail}:${token}`);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    await prisma.$transaction(async (tx) => {
+      await tx.verification.deleteMany({
+        where: { identifier: `pwd_reset:${cleanEmail}` },
+      });
+      await tx.verification.create({
+        data: {
+          id: randomUUID(),
+          identifier: `pwd_reset:${cleanEmail}`,
+          value: tokenHash,
+          expiresAt,
+        },
+      });
+    });
+
+    return genericResponse;
   }
 
   /**
-   * Reset password with token
+   * Reset password with single-use hashed token (CUSTOMER accounts only)
    */
   async resetPassword(params: { email: string; token: string; newPassword: string }) {
     const cleanEmail = params.email.trim().toLowerCase();
+    const rawToken = params.token.trim();
+    if (!cleanEmail || !rawToken) {
+      throw new CustomerServiceError(400, "Некорректные параметры сброса пароля");
+    }
     if (!params.newPassword || params.newPassword.length < 12) {
       throw new CustomerServiceError(400, "Новый пароль должен содержать не менее 12 символов");
     }
 
+    const user = await prisma.user.findUnique({
+      where: { email: cleanEmail },
+      select: { id: true, role: true, active: true },
+    });
+
+    if (!user || !user.active || user.role !== "CUSTOMER") {
+      throw new CustomerServiceError(400, "Недействительный или истёкший токен сброса пароля");
+    }
+
+    const tokenHash = sha256Hex(`${cleanEmail}:${rawToken}`);
     const verification = await prisma.verification.findFirst({
       where: {
-        identifier: cleanEmail,
-        value: params.token,
+        identifier: `pwd_reset:${cleanEmail}`,
+        value: tokenHash,
         expiresAt: { gt: new Date() },
       },
     });
@@ -233,24 +276,20 @@ export class CustomerPortalService {
       throw new CustomerServiceError(400, "Недействительный или истёкший токен сброса пароля");
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: cleanEmail },
-    });
-
-    if (!user) {
-      throw new CustomerServiceError(404, "Пользователь не найден");
-    }
-
     const hashedPassword = await hashPassword(params.newPassword);
 
     await prisma.$transaction(async (tx) => {
+      // Atomic single-use consumption
+      const deleted = await tx.verification.deleteMany({
+        where: { id: verification.id },
+      });
+      if (deleted.count !== 1) {
+        throw new CustomerServiceError(400, "Токен сброса пароля уже использован");
+      }
+
       await tx.account.updateMany({
         where: { userId: user.id, providerId: "credential" },
         data: { password: hashedPassword },
-      });
-
-      await tx.verification.delete({
-        where: { id: verification.id },
       });
     });
 
@@ -288,7 +327,7 @@ export class CustomerPortalService {
   }
 
   /**
-   * Update customer profile
+   * Update customer profile (name only; email changes require dedicated verification)
    */
   async updateProfile(customerId: string, input: { name?: string; phone?: string; email?: string | null }) {
     const customer = await prisma.customer.findUnique({
@@ -297,18 +336,22 @@ export class CustomerPortalService {
 
     if (!customer) throw new CustomerServiceError(404, "Профиль покупателя не найден");
 
-    const normPhone = input.phone ? normalizePhone(input.phone) : customer.normalizedPhone;
-    const cleanEmail = input.email !== undefined ? (input.email ? input.email.trim().toLowerCase() : null) : customer.email;
+    const currentEmail = customer.email ? customer.email.trim().toLowerCase() : null;
+    if (input.email !== undefined) {
+      const requestedEmail = input.email ? input.email.trim().toLowerCase() : null;
+      if (requestedEmail !== currentEmail) {
+        throw new CustomerServiceError(
+          400,
+          "Смена email требует отдельного подтверждения нового адреса. Основной идентификатор аккаунта — подтверждённый номер телефона."
+        );
+      }
+    }
 
     const updated = await prisma.$transaction(async (tx) => {
       const c = await tx.customer.update({
         where: { id: customerId },
         data: {
           name: input.name !== undefined ? input.name.trim() : customer.name,
-          phone: input.phone !== undefined ? (input.phone ? input.phone.trim() : null) : customer.phone,
-          normalizedPhone: normPhone,
-          email: cleanEmail,
-          normalizedEmail: cleanEmail,
         },
       });
 
@@ -317,7 +360,6 @@ export class CustomerPortalService {
           where: { id: customer.userId },
           data: {
             name: c.name,
-            email: cleanEmail,
           },
         });
       }
@@ -326,6 +368,43 @@ export class CustomerPortalService {
     });
 
     return updated;
+  }
+
+  async requestDataErasure(customerId: string) {
+    const customer = await prisma.customer.findUnique({
+      where: { id: customerId },
+      include: { user: true },
+    });
+
+    if (!customer) throw new CustomerServiceError(404, "Профиль покупателя не найден");
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Delete all active sessions
+      if (customer.userId) {
+        await tx.session.deleteMany({ where: { userId: customer.userId } });
+        // 2. Mark user inactive
+        await tx.user.update({
+          where: { id: customer.userId },
+          data: { active: false },
+        });
+      }
+      // 3. Anonymize customer profile per 152-FZ Art. 21
+      await tx.customer.update({
+        where: { id: customerId },
+        data: {
+          name: "Пользователь отозвал согласие на обработку ПДн",
+          email: null,
+        },
+      });
+      // 4. Delete saved addresses and vehicles to comply with immediate minimization
+      await tx.customerAddress.deleteMany({ where: { customerId } });
+      await tx.customerVehicle.deleteMany({ where: { customerId } });
+    });
+
+    return {
+      success: true,
+      message: "Согласие отозвано. Аккаунт деактивирован, персональные данные удалены в соответствии со ст. 21 152-ФЗ.",
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -797,6 +876,8 @@ export class CustomerPortalService {
       return created;
     });
 
+    notificationService.notifyRequestCreated(newRequest.id, customerId, newRequest.number).catch(console.error);
+
     return newRequest;
   }
 
@@ -867,6 +948,16 @@ export class CustomerPortalService {
           requestId: req.id,
           customerComment: comment,
         });
+        if (createdOrder) {
+          notificationService
+            .notifyOfferAccepted(
+              createdOrder.id,
+              customerId,
+              createdOrder.orderNumber,
+              req.assignedManagerId
+            )
+            .catch(console.error);
+        }
       } catch (err) {
         console.error("Order creation from accepted offer error:", err);
       }

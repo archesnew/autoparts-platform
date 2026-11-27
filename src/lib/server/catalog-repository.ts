@@ -4,6 +4,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import type { Product, SupplierOffer, Supplier } from "@prisma/client";
 import { prisma } from "./db.ts";
 import type { CatalogSearchFilters } from "./catalog-types.ts";
+import { analyzeSearchQuery, scoreProductRelevance } from "./catalog-search-normalizer.ts";
 
 export type ProductWithOffers = Product & {
   offers: (SupplierOffer & {
@@ -22,28 +23,42 @@ export class PrismaCatalogRepository {
     const q = filters.query?.trim();
     const conditions: Prisma.ProductWhereInput[] = [];
 
+    let analysis: ReturnType<typeof analyzeSearchQuery> | null = null;
+
     if (q) {
-      const qLower = q.toLocaleLowerCase("ru-RU");
-      conditions.push({
-        OR: [
-          { primaryOem: { contains: q, mode: "insensitive" } },
-          { oemCodes: { has: q.toUpperCase() } },
-          { altArticles: { has: q.toUpperCase() } },
-          { canonicalName: { contains: q, mode: "insensitive" } },
-          { brand: { contains: q, mode: "insensitive" } },
-          { description: { contains: q, mode: "insensitive" } },
+      analysis = analyzeSearchQuery(q);
+      const orClauses: Prisma.ProductWhereInput[] = [];
+
+      for (const variant of analysis.queryVariants) {
+        orClauses.push(
+          { primaryOem: { contains: variant, mode: "insensitive" } },
+          { oemCodes: { has: variant.toUpperCase() } },
+          { altArticles: { has: variant.toUpperCase() } },
+          { canonicalName: { contains: variant, mode: "insensitive" } },
+          { brand: { contains: variant, mode: "insensitive" } },
+          { description: { contains: variant, mode: "insensitive" } },
           {
             offers: {
               some: {
                 OR: [
-                  { rawArticle: { contains: q, mode: "insensitive" } },
-                  { originalTitle: { contains: q, mode: "insensitive" } },
+                  { rawArticle: { contains: variant, mode: "insensitive" } },
+                  { originalTitle: { contains: variant, mode: "insensitive" } },
                 ],
               },
             },
-          },
-        ],
-      });
+          }
+        );
+      }
+
+      for (const b of analysis.brandHints) {
+        orClauses.push({ brand: { equals: b, mode: "insensitive" } });
+      }
+
+      for (const c of analysis.categoryHints) {
+        orClauses.push({ category: { equals: c } });
+      }
+
+      conditions.push({ OR: orClauses });
     }
 
     if (filters.category) {
@@ -107,45 +122,8 @@ export class PrismaCatalogRepository {
       });
     }
 
-    // Filter by car make / model / year in applicability json or text
-    if (filters.make || filters.model || filters.year) {
-      // Applicability is stored as JSON array of { make, model, year, yearFrom, yearTo }
-      // For flexibility, we match on applicability JSON or description
-      const makeRegex = filters.make ? `(?i)${filters.make}` : null;
-      const modelRegex = filters.model ? `(?i)${filters.model}` : null;
-      const yearStr = filters.year ? filters.year : null;
-
-      const subConditions: Prisma.ProductWhereInput[] = [];
-
-      if (makeRegex) {
-        subConditions.push({
-          OR: [
-            { canonicalName: { contains: filters.make, mode: "insensitive" } },
-            { description: { contains: filters.make, mode: "insensitive" } },
-            // Raw JSON path matching can be augmented
-          ],
-        });
-      }
-      if (modelRegex) {
-        subConditions.push({
-          OR: [
-            { canonicalName: { contains: filters.model, mode: "insensitive" } },
-            { description: { contains: filters.model, mode: "insensitive" } },
-          ],
-        });
-      }
-      if (yearStr) {
-        subConditions.push({
-          OR: [
-            { description: { contains: yearStr } },
-          ],
-        });
-      }
-
-      if (subConditions.length) {
-        conditions.push({ AND: subConditions });
-      }
-    }
+    // Apply vehicle compatibility filtering ONLY when fitmentOnly (CONFIRMED mode) is explicitly enabled
+    const hasVehicleFilter = Boolean(filters.fitmentOnly) && Boolean(filters.make || filters.model || filters.year);
 
     const where: Prisma.ProductWhereInput = conditions.length ? { AND: conditions } : {};
 
@@ -161,17 +139,89 @@ export class PrismaCatalogRepository {
             },
             orderBy: [{ status: "asc" }, { purchasePrice: "asc" }],
           },
+          ...(hasVehicleFilter
+            ? {
+                fitments: {
+                  include: {
+                    make: { select: { name: true, nameRu: true } },
+                    model: { select: { name: true, nameRu: true } },
+                    generation: { select: { name: true, shortName: true } },
+                  },
+                },
+              }
+            : {}),
         },
         orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-        skip: filters.skip ?? 0,
-        take: filters.take ?? 50,
+        skip: hasVehicleFilter ? 0 : (filters.skip ?? 0),
+        take: hasVehicleFilter ? 250 : (filters.take ?? 50),
       }),
       this.db.product.count({ where }),
     ]);
 
+    let sortedProducts = products as ProductWithOffers[];
+
+    if (hasVehicleFilter) {
+      const targetMake = filters.make?.trim().toLowerCase();
+      const targetModel = filters.model?.trim().toLowerCase();
+      const targetYear = filters.year ? parseInt(filters.year, 10) : null;
+
+      sortedProducts = sortedProducts.filter((prod: any) => {
+        const apps = Array.isArray(prod.applicability) ? prod.applicability : [];
+        const fitments = Array.isArray(prod.fitments) ? prod.fitments : [];
+
+        // CONFIRMED compatibility via structured Product.applicability
+        const matchesApp = apps.some((a: any) => {
+          const makeOk = !targetMake || (a.make && String(a.make).toLowerCase() === targetMake);
+          const modelOk = !targetModel || (a.model && String(a.model).toLowerCase().includes(targetModel));
+          const yearOk =
+            !targetYear ||
+            (a.yearFrom && a.yearTo
+              ? targetYear >= Number(a.yearFrom) && targetYear <= Number(a.yearTo)
+              : a.year
+              ? String(a.year).includes(String(targetYear))
+              : true);
+          return makeOk && modelOk && yearOk;
+        });
+
+        // CONFIRMED compatibility via ProductFitment relational records
+        const matchesFitment = fitments.some((f: any) => {
+          if (f.isUniversal) return true;
+          const fMake = (f.make?.name || "").toLowerCase();
+          const fModel = (f.model?.name || "").toLowerCase();
+          const makeOk = !targetMake || fMake === targetMake;
+          const modelOk = !targetModel || fModel.includes(targetModel);
+          const yearOk =
+            !targetYear ||
+            (f.yearFrom && f.yearTo
+              ? targetYear >= Number(f.yearFrom) && targetYear <= Number(f.yearTo)
+              : true);
+          return makeOk && modelOk && yearOk;
+        });
+
+        return matchesApp || matchesFitment;
+      });
+    }
+
+    const filteredTotal = hasVehicleFilter ? sortedProducts.length : total;
+    if (hasVehicleFilter) {
+      const start = filters.skip ?? 0;
+      const count = filters.take ?? 50;
+      sortedProducts = sortedProducts.slice(start, start + count);
+    }
+
+    if (analysis) {
+      const targetAnalysis = analysis;
+      const scored = sortedProducts.map((p) => ({
+        product: p,
+        score: scoreProductRelevance(p, targetAnalysis),
+      }));
+      scored.sort((a, b) => b.score - a.score);
+      sortedProducts = scored.map((s) => s.product);
+    }
+
     return {
-      products: products as ProductWithOffers[],
-      total,
+      products: sortedProducts,
+      total: filteredTotal,
     };
   }
 

@@ -24,11 +24,20 @@ export const VEHICLE_DATA_SOURCES: SourceMetadata[] = [
   {
     id: "meterapp",
     name: "MeterApp Vehicle DB Global Catalog",
-    version: "2.40.0",
-    license: "ISC",
+    version: "2.42.0",
+    license: "ISC (code); open public registers & manufacturer catalogs (data)",
     licenseUrl: "https://opensource.org/licenses/ISC",
     homepage: "https://github.com/MeterApp/vehicle-db",
     description:
-      "Open-source offline international vehicle database compiled from global transportation registries (NHTSA, DVLA, EEA, RDW, Senatran, JPJ) covering model production years.",
+      "Open-source offline international vehicle database compiled from global transportation registries (NHTSA, UK DfT OGL v3.0, EEA CO2 CC-BY 4.0, NL RDW Public Domain, NZTA & Malaysia JPJ CC-BY 4.0, Brazil SENATRAN Public Domain) and dated manufacturer catalogs.",
+  },
+  {
+    id: "manufacturer-verified",
+    name: "Verified Manufacturer Official Line-ups (CN/RU/CIS)",
+    version: "2026.11",
+    license: "Factual product names with source attribution",
+    homepage: "https://zaptut.pro/about#vehicle-data",
+    description:
+      "Targeted verification of high-demand CIS/Chinese models (Exeed TXL/VX/RX, Geely Tugella, Li Auto L6/L7, Zeekr 007) where public fleet registers lack model-level coverage, backed by official manufacturer specification sheets.",
   },
 ];

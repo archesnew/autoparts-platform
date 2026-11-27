@@ -20,6 +20,7 @@ import type {
 } from "./order-types.ts";
 import { initialFinancialConfig } from "../financial-config.ts";
 import { randomUUID } from "node:crypto";
+import { notificationService } from "./notification-service.ts";
 
 export type { OrderDto, OrderItemDto, PaymentDto, ShipmentDto, OrderDocumentDto, OrderMessageDto };
 
@@ -514,6 +515,8 @@ export const orderService = {
       }
     );
 
+    notificationService.notifyPaymentConfirmed(existing.id, existing.customerId, existing.orderNumber).catch(console.error);
+
     return this.getOrder(existing.id, callerStaff);
   },
 
@@ -571,6 +574,16 @@ export const orderService = {
           status: nextOrderStatus,
         },
       });
+    }
+
+    if (input.trackingNumber) {
+      notificationService.notifyShipmentDispatched(
+        existing.id,
+        existing.customerId,
+        existing.orderNumber,
+        input.trackingNumber,
+        input.carrier || shipment.carrier || "СДЭК"
+      ).catch(console.error);
     }
 
     return this.getOrder(existing.id, callerStaff);
